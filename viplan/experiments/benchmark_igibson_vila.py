@@ -1,6 +1,4 @@
 import os
-import shutil
-import sys
 import fire
 import json
 import copy
@@ -12,9 +10,7 @@ import transformers
 from unified_planning.shortcuts import *
 from unified_planning.io import PDDLReader
 
-from PIL import Image
-import matplotlib.pyplot as plt
-
+from viplan.log_utils import get_img_output_dir
 from viplan.planning.igibson_client_env import iGibsonClient
 from viplan.code_helpers import get_logger, load_vlm, get_unique_id
 
@@ -265,10 +261,7 @@ def main(
             logger.info(f"Goal: {goal_string}")
             problem_prompt = base_prompt.replace("{goal_string}", goal_string)
 
-            img_output_dir = os.path.join('img', f'{task}_{scene_id}_{instance_id}')
-            if os.path.exists(img_output_dir):
-                shutil.rmtree(img_output_dir)
-            os.makedirs(img_output_dir, exist_ok=True)
+            img_output_dir = get_img_output_dir('vila', instance_id, scene_id, task)
 
             # Run planning loop
             logger.info("Starting planning loop...")
@@ -322,6 +315,7 @@ def main(
     with open(output_file, 'w') as f:
         json.dump(results, f)
     logger.info(f"Results saved to {output_file}")
-    
+
+
 if __name__ == "__main__":
     fire.Fire(main)

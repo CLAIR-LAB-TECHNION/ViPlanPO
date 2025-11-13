@@ -9,9 +9,11 @@ from unified_planning.shortcuts import *
 from unified_planning.io import PDDLReader
 
 from viplan.experiments.benchmark_igibson_plan import get_preconditions_predicates, get_effects_predicates, update_problem, get_plan
+from viplan.log_utils import get_img_output_dir
 from viplan.planning.igibson_client_env import iGibsonClient
 from viplan.code_helpers import get_logger, get_unique_id
 
+MAX_STEPS = 10
 
 goal_templates = {
     'reachable': {
@@ -115,7 +117,7 @@ def test_action(action, env, logger):
         return False
     return True
 
-def test_plan(env, logger=None, max_steps=10):
+def test_plan(env, img_output_dir, logger=None, max_steps=MAX_STEPS):
     if logger is None:
         logger = get_logger("info")
     env.reset()
@@ -139,6 +141,11 @@ def test_plan(env, logger=None, max_steps=10):
         logger.info(f"Steps left: {max_steps}")
         action = action_queue.popleft()
         max_steps -= 1
+
+        step = MAX_STEPS - max_steps + 1
+        img = env.render()
+        action_details_str = action.action.name + '-'.join(action.actual_parameters)
+        img.save(os.path.join(img_output_dir, f"env_render_{step}_{action_details_str}.png"))
         
         logger.info(f"Testing action {action.action.name} with params {action.actual_parameters}")
         if not test_action(action, env, logger):
@@ -202,8 +209,10 @@ def main(
         for scene_id, instance_id in scene_instance_pairs:
             env = iGibsonClient(task=task, scene_id=scene_id, instance_id=instance_id, problem=problem, base_url=base_url, logger=logger)
 
+            img_output_dir = get_img_output_dir('oracle', instance_id, scene_id, task)
+
             # Run planning loop
-            success, replans = test_plan(env, logger=logger, max_steps=max_steps)
+            success, replans = test_plan(env, img_output_dir, logger=logger, max_steps=max_steps)
 
             # Store results
             problem_results = {'success':success, 'replans':replans}

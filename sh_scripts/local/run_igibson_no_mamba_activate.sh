@@ -1,0 +1,57 @@
+#!/bin/bash -l
+
+# Default flags
+RUN_CLOSED_SOURCE=false
+RUN_PREDICATES=false
+RUN_VILA=true
+
+# collect other args
+forward_args=()
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --run_closed_source)
+            RUN_CLOSED_SOURCE=true
+            shift
+            ;;
+        --run_predicates)
+            RUN_PREDICATES="$2"
+            shift 2
+            ;;
+        --run_vila)
+            RUN_VILA="$2"
+            shift 2
+            ;;
+        *)
+            forward_args+=("$1")
+            shift
+            ;;
+    esac
+done
+
+SCRIPT_DIR=$PWD/"sh_scripts/local/scripts"
+echo "Script directory: $SCRIPT_DIR"
+
+if [ ${#forward_args[@]} -gt 0 ]; then
+    echo "Forwarding arguments:"
+    for a in "${forward_args[@]}"; do echo "  $a"; done
+fi
+
+echo "Run closed source: $RUN_CLOSED_SOURCE"
+echo "Run predicates:    $RUN_PREDICATES"
+echo "Run vila:          $RUN_VILA"
+
+# predicates (planning) benchmarks
+if [[ "$RUN_PREDICATES" == "true" ]]; then
+    if [[ "$RUN_CLOSED_SOURCE" == "true" ]]; then
+        bash "$SCRIPT_DIR/benchmark_igibson_planning_array_closed.sh" "${forward_args[@]}"
+    fi
+    bash "$SCRIPT_DIR/benchmark_igibson_planning_array_no_mamba_activate.sh"     "${forward_args[@]}"
+fi
+
+# vila benchmarks
+if [[ "$RUN_VILA" == "true" ]]; then
+    if [[ "$RUN_CLOSED_SOURCE" == "true" ]]; then
+        bash "$SCRIPT_DIR/benchmark_igibson_vila_array_closed.sh" "${forward_args[@]}"
+    fi
+    bash "$SCRIPT_DIR/benchmark_igibson_vila_array_no_mamba_activate.sh"     "${forward_args[@]}"
+fi
