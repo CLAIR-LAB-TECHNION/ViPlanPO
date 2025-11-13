@@ -172,10 +172,12 @@ def planning_loop(env, model, base_prompt, problem, logger, img_output_dir, max_
             wrong_parameters = not success
 
         if first_action:
-            action_str = f'{first_action["action"]}_{'-'.join(first_action["parameters"])}_{first_action["outcome"]}'
+            params_str = "-".join(first_action["parameters"])
+            outcome_str = first_action.get("outcome", "")
+            action_details_str = f'{first_action["action"]}_{params_str}_{outcome_str}'
         else:
-            action_str = 'failed'
-        img.save(os.path.join(img_output_dir, f"env_render_{step}_{action_str}.png"))
+            action_details_str = 'failed'
+        img.save(os.path.join(img_output_dir, f"env_render_{step}_{action_details_str}.png"))
         
         # Failsafe for actions that don't exist
         try:
