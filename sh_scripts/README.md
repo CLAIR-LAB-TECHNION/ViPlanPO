@@ -15,5 +15,29 @@ The two main entry points are `run_blocksworld.sh` and `run_igibson.sh` (located
 
 Check the individual scripts for more details on the arguments.
 
+## Passing sbatch options
+- Place Slurm `sbatch` options before a `--` separator. All arguments after `--` are forwarded to the internal job scripts unchanged.
+- When no `--` is provided, all non-wrapper arguments are treated as job script arguments (backward compatible behavior).
+
+Examples:
+
+```bash
+# Set partition and time on all submitted jobs, then pass job args
+./sh_scripts/slurm_cluster/run_blocksworld.sh -p gpu --time=02:00:00 -- \
+	--experiment_name my_blocksworld_run --models some_model
+
+# Run only VILA jobs on CPU partition, set array for all jobs
+./sh_scripts/slurm_cluster/run_igibson.sh --run_predicates false -p cpu --array=0-49%5 -- \
+	--experiment_name igibson_vila_only
+
+# Backwards compatible: treat all args as job script args
+./sh_scripts/slurm_cluster/run_blocksworld.sh --experiment_name legacy_behavior
+```
+
+Notes:
+- The `--` separator is part of the wrapper interface to split sbatch options from job args; the wrapper will forward args to `sbatch` correctly.
+- Quoting is preserved for complex flags like `--export=ALL,VAR="value with spaces"`.
+- `--array` and GPU flags (e.g., `--gres=gpu:2`) apply to every job submitted by the wrapper.
+
 
 Back to [Main Documentation](../README.md).
