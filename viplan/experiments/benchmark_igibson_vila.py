@@ -1,4 +1,5 @@
 import os
+import shutil
 import sys
 import fire
 import json
@@ -105,7 +106,7 @@ def get_priviledged_predicates_str(predicates):
     priviledged_string = priviledged_string.strip()
     return priviledged_string
 
-def planning_loop(env, model, base_prompt, problem, logger, max_steps=50):
+def planning_loop(env, model, base_prompt, problem, logger, img_output_dir, max_steps=50):
     previous_actions = []
     problem_results = {
         'plans': [],
@@ -117,7 +118,8 @@ def planning_loop(env, model, base_prompt, problem, logger, max_steps=50):
     initial_max_steps = copy.deepcopy(max_steps)
 
     while not env.goal_reached and max_steps > 0:
-        logger.info(f"Step {initial_max_steps - max_steps + 1}")
+        step = initial_max_steps - max_steps + 1
+        logger.info(f"Step {step}")
         logger.info(f"Environment state before action:\n{env.state}")
         prompt = base_prompt.replace("{previous_actions}", json.dumps(previous_actions))
         priviledged_preds = env.priviledged_predicates
@@ -133,8 +135,10 @@ def planning_loop(env, model, base_prompt, problem, logger, max_steps=50):
             prompt = prompt.replace("{priviledged_info}","")
             
         logger.debug(f"Prompt:\n{prompt}")
-        
-        outputs = model.generate(prompts=[prompt], images=[env.render()], return_probs=False)
+
+        img = env.render()
+        outputs = model.generate(prompts=[prompt], images=[img], return_probs=False)
+
         logger.info("VLM output: " + outputs[0])
         try:
             vlm_plan = parse_json_output(outputs[0])
@@ -146,8 +150,7 @@ def planning_loop(env, model, base_prompt, problem, logger, max_steps=50):
         if 'explanation' in vlm_plan:
             logger.info(f"VLM CoT: {vlm_plan['explanation']}")
 
-        
-        
+        first_action = None
         try:
             action = None
             info = None
@@ -167,6 +170,12 @@ def planning_loop(env, model, base_prompt, problem, logger, max_steps=50):
             problem_results['actions'][-1]['success'] = success
             problem_results['actions'][-1]['info'] = info
             wrong_parameters = not success
+
+        if first_action:
+            action_str = f'{first_action["action"]}_{'-'.join(first_action["parameters"])}_{first_action["outcome"]}'
+        else:
+            action_str = 'failed'
+        img.save(os.path.join(img_output_dir, f"env_render_{step}_{action_str}.png"))
         
         # Failsafe for actions that don't exist
         try:
@@ -253,10 +262,15 @@ def main(
             goal_string = get_goal_str(env)
             logger.info(f"Goal: {goal_string}")
             problem_prompt = base_prompt.replace("{goal_string}", goal_string)
-            
+
+            img_output_dir = os.path.join('img', f'{task}_{scene_id}_{instance_id}')
+            if os.path.exists(img_output_dir):
+                shutil.rmtree(img_output_dir)
+            os.makedirs(img_output_dir, exist_ok=True)
+
             # Run planning loop
             logger.info("Starting planning loop...")
-            problem_results = planning_loop(env, model, problem_prompt, problem, logger, max_steps=max_steps)
+            problem_results = planning_loop(env, model, problem_prompt, problem, logger, img_output_dir, max_steps=max_steps)
             results[f"{problem_file}_{scene_id}_{instance_id}"] = problem_results
     
     # Compute some statistics
