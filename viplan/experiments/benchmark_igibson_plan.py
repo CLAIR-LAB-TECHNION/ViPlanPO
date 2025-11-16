@@ -7,7 +7,7 @@ import random
 import tempfile
 import transformers
 
-from typing import List
+from typing import List, Optional
 
 from collections import deque
 
@@ -16,6 +16,12 @@ from unified_planning.io import PDDLReader
 from unified_planning.environment import get_environment
 
 from viplan.code_helpers import get_logger, parse_output, get_unique_id
+from viplan.experiments.policy_interface import (
+    Policy,
+    PolicyAction,
+    PolicyObservation,
+    resolve_policy_class,
+)
 from viplan.planning.igibson_client_env import iGibsonClient
 
 # Standard templates
@@ -100,6 +106,28 @@ def get_predicates_for_question(env, node, grounded_args, top_level=True, defaul
         raise ValueError("Unknown node type", node)
 
     return [result] if type(result) is dict else result
+
+
+class DefaultPlanningPolicy(Policy):
+    """Default policy that sequentially executes planner actions."""
+
+    def __init__(self, action_queue, logger=None, **kwargs):
+        predicate_language = kwargs.get('predicate_language', predicate_questions)
+        super().__init__(predicate_language=predicate_language)
+        self.action_queue = action_queue
+        self.logger = logger or get_logger()
+
+    def next_action(self, observation: PolicyObservation) -> Optional[PolicyAction]:
+        if not self.action_queue:
+            return None
+        action = self.action_queue.popleft()
+        if self.logger:
+            self.logger.debug(f"Policy selecting action {action}")
+        return PolicyAction(
+            name=action.action.name,
+            parameters=[str(p) for p in action.actual_parameters],
+            metadata={'plan_action': action},
+        )
 
 # Predicate sets for preconditions and effects
 
@@ -560,42 +588,82 @@ def get_plan(problem, logger):
     return result
 
 
-def check_plan(env, 
+def check_plan(env,
                plan,
                problem,
                vlm_state, # Initial state as perceived by the VLM
-               model, 
-               base_prompt, 
+               model,
+               base_prompt,
                logger,
                replan=False,
                text_only=False,
                max_actions=20,
                enumerate_replan=False,
-               enum_batch_size=64):
-    
+               enum_batch_size=64,
+               policy_class=DefaultPlanningPolicy,
+               policy_kwargs=None):
+
     all_correct = True
     results = []
     replans = []
-    action_queue = deque(plan.actions)
+
+    def instantiate_policy(current_plan):
+        queue = deque(current_plan.actions)
+        kwargs = dict(policy_kwargs or {})
+        kwargs.setdefault('predicate_language', predicate_questions)
+        kwargs.setdefault('logger', logger)
+        kwargs.setdefault('problem', problem)
+        kwargs.setdefault('model', model)
+        kwargs.setdefault('base_prompt', base_prompt)
+        kwargs['plan'] = current_plan
+        kwargs['action_queue'] = queue
+        policy = policy_class(**kwargs)
+        return policy, queue
+
+    policy, action_queue = instantiate_policy(plan)
     most_recent_action = None
-    while action_queue and len(results) < max_actions:
-        action = action_queue.popleft()
-        
+
+    while len(results) < max_actions:
+        if not action_queue:
+            logger.info('All actions completed')
+            break
+
+        observation = PolicyObservation(
+            image=env.render(),
+            problem=problem,
+            predicate_language=policy.predicate_language,
+            predicate_groundings=env.visible_predicates,
+            previous_actions=[
+                {'action': r['action'], 'success': r.get('action_state_correct')}
+                for r in results
+            ],
+            context={'vlm_state': copy.deepcopy(vlm_state)},
+        )
+
+        policy_action = policy.next_action(observation)
+        if policy_action is None:
+            logger.info('Policy returned no action; stopping episode')
+            break
+
+        action = policy_action.metadata.get('plan_action')
+        if action is None:
+            logger.warning('Policy did not provide plan_action metadata; using queue order')
+            action = action_queue.popleft()
+        else:
+            try:
+                action_queue.remove(action)
+            except ValueError:
+                pass
+
         logger.info(f"Applying action {action}")
-        
-        # Debug: save env image
-        # img_path = os.path.join("debug", f"env_before_{len(results)}.png")
-        # os.makedirs(os.path.dirname(img_path), exist_ok=True)
-        # img = env.render()
-        # img.save(img_path)
-        
+
         try:
             action_correct, preconditions_results, non_visible_precond_results, effects_results, action_state_correct, action_info = check_action(env, action, vlm_state, model, base_prompt, logger, text_only=text_only)
         except Exception as e:
             logger.warning(f"Error while checking action {action}: {e}")
             import traceback
             traceback.print_exc()
-            
+
             action_correct = False
             preconditions_results = {}
             non_visible_precond_results = {}
@@ -603,7 +671,13 @@ def check_plan(env,
             action_state_correct = False
             action_info = None
             break
-            
+
+        policy.observe_outcome(
+            policy_action,
+            success=action_correct,
+            info={'preconditions': preconditions_results, 'effects': effects_results},
+        )
+
         results.append({
             'action': str(action),
             'action_correct': action_correct,
@@ -615,18 +689,15 @@ def check_plan(env,
         })
         if not action_correct:
             if 'all_correct' in preconditions_results and not preconditions_results['all_correct']:
-                reason = "Preconditions not satisfied"
-                failed_results = preconditions_results
+                reason = 'Preconditions not satisfied'
             elif effects_results is None:
-                reason = "Action was not legal"
-                failed_results = {}
+                reason = 'Action was not legal'
             elif not effects_results['all_correct']:
-                reason = "Not all effects were observed as expected"
-                failed_results = effects_results
+                reason = 'Not all effects were observed as expected'
             else:
-                reason = "Unknown"
+                reason = 'Unknown'
             logger.warning(f"Action {action} failed: {reason}")
-            if reason == "Action was not legal" and str(action) == str(most_recent_action):
+            if reason == 'Action was not legal' and str(action) == str(most_recent_action):
                 logger.warning("Action was not legal, but it was the same as the most recent action. Stopping as we're likely in a loop.")
                 break
             try:
@@ -634,18 +705,16 @@ def check_plan(env,
 
                 if replan:
                     replans.append({})
-                    logger.info("Replanning from newly observed state")
-                    
+                    logger.info('Replanning from newly observed state')
+
                     if enumerate_replan:
-                        # Enumerate the predicates in the new state
-                        questions = get_questions(env.visible_predicates) # For partial observability, use the visible predicates, while the rest stays unchanged
+                        questions = get_questions(env.visible_predicates)
                         enum_results = get_enumeration_results(env, model, questions, base_prompt, logger, batch_size=enum_batch_size)
                         enum_metrics = compute_enumeration_metrics(enum_results)
                         replans[-1]['enum_results'] = enum_results
                         replans[-1]['enum_metrics'] = enum_metrics
-                        
+
                         vlm_state, changed = update_vlm_state(copy.deepcopy(env.state), enum_results)
-                        # No need to update vlm state if not enumerating, as the effect results are already updated in check_action
                 else:
                     break
             except Exception as e:
@@ -654,40 +723,38 @@ def check_plan(env,
                 traceback.print_exc()
                 all_correct = False
                 break
-                
+
             new_problem = update_problem(vlm_state, env.problem)
             plan_result = get_plan(new_problem, logger)
             if plan_result is None:
-                logger.warning("Breaking out of episode due to error in the planner")
-                break # Exit episode
+                logger.warning('Breaking out of episode due to error in the planner')
+                break
             elif plan_result.status != up.engines.PlanGenerationResultStatus.SOLVED_SATISFICING:
-                logger.warning("No plan found after replanning")
+                logger.warning('No plan found after replanning')
                 break
             else:
-                logger.info("Replan found")
+                logger.info('Replan found')
                 new_plan = plan_result.plan
-                action_queue = deque(new_plan.actions)
+                policy, action_queue = instantiate_policy(new_plan)
                 replans[-1].update({
                     'step': len(results),
                     'actions': [str(a) for a in new_plan.actions]
-                })                    
-            
-        if len(action_queue) == 0:
-            logger.info("All actions completed")
-            break
+                })
+
         if len(results) >= max_actions:
-            logger.warning("Max actions reached")
+            logger.warning('Max actions reached')
             break
-        
+
         most_recent_action = copy.deepcopy(action)
-        
+
     goal_reached = env.goal_reached
     logger.info(f"Goal reached: {goal_reached}")
-    
+
     if all_correct and not goal_reached:
         logger.warning(f"All actions executed correctly, but goal not reached")
 
     return all_correct, results, replans, action_queue, goal_reached
+
 
 def compute_metrics(results, logger):
     # task accuracy = task was fully completed, 
@@ -879,6 +946,9 @@ def main(
     problem_files = [problem for problem in metadata.keys()]
     problem_files = [f"{problems_dir}/{problem}" for problem in problem_files]
     
+    PolicyClass = resolve_policy_class(policy_cls, DefaultPlanningPolicy)
+    policy_kwargs = {'predicate_language': predicate_questions}
+
     for problem_file in problem_files:
         logger.info(f"Loading problem {problem_file}")
         
@@ -929,7 +999,22 @@ def main(
                 continue
             plan = plan_result.plan
             
-            all_correct, action_results, replans, action_queue, goal_reached = check_plan(env, plan, problem, vlm_state, model, prompt_path, logger, replan=replan, text_only=text_only, enumerate_replan=enumerate_replan, enum_batch_size=enum_batch_size, max_actions=max_steps)
+            all_correct, action_results, replans, action_queue, goal_reached = check_plan(
+                env,
+                plan,
+                problem,
+                vlm_state,
+                model,
+                prompt_path,
+                logger,
+                replan=replan,
+                text_only=text_only,
+                enumerate_replan=enumerate_replan,
+                enum_batch_size=enum_batch_size,
+                max_actions=max_steps,
+                policy_class=PolicyClass,
+                policy_kwargs=policy_kwargs,
+            )
             results[f"{problem_file}_{scene_id}_{instance_id}"].update({
                 'all_correct': all_correct,
                 'goal_reached': goal_reached,

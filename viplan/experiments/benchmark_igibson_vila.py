@@ -7,12 +7,20 @@ import torch
 import random
 import transformers
 
+from typing import Optional
+
 from unified_planning.shortcuts import *
 from unified_planning.io import PDDLReader
 
 from viplan.log_utils import get_img_output_dir
 from viplan.planning.igibson_client_env import iGibsonClient
 from viplan.code_helpers import get_logger, load_vlm, get_unique_id
+from viplan.experiments.policy_interface import (
+    Policy,
+    PolicyAction,
+    PolicyObservation,
+    resolve_policy_class,
+)
 
 preds_templates = {
     'reachable': "the {0} is reachable by the agent",
@@ -102,7 +110,60 @@ def get_priviledged_predicates_str(predicates):
     priviledged_string = priviledged_string.strip()
     return priviledged_string
 
-def planning_loop(env, model, base_prompt, problem, logger, img_output_dir, max_steps=50):
+
+class DefaultVILAPolicy(Policy):
+    """Default policy that reproduces the original VILA planning loop."""
+
+    def __init__(self, model, base_prompt, logger=None, **kwargs):
+        predicate_language = kwargs.get('predicate_language', preds_templates)
+        super().__init__(predicate_language=predicate_language)
+        self.model = model
+        self.base_prompt = base_prompt
+        self.logger = logger or get_logger()
+
+    def _format_prompt(self, observation: PolicyObservation) -> str:
+        prompt = self.base_prompt.replace(
+            "{previous_actions}", json.dumps(list(observation.previous_actions))
+        )
+        priviledged_preds = observation.predicate_groundings
+        if priviledged_preds is not None:
+            if all(
+                priviledged_preds[predicate] == {}
+                for predicate in priviledged_preds
+            ):
+                prompt = prompt.replace("## Additional information", "")
+                prompt = prompt.replace("{priviledged_info}", "")
+            else:
+                priviledged_str = get_priviledged_predicates_str(priviledged_preds)
+                prompt = prompt.replace("{priviledged_info}", priviledged_str)
+        else:
+            prompt = prompt.replace("## Additional information", "")
+            prompt = prompt.replace("{priviledged_info}", "")
+        return prompt
+
+    def next_action(self, observation: PolicyObservation) -> Optional[PolicyAction]:
+        prompt = self._format_prompt(observation)
+        self.logger.debug(f"Prompt:\n{prompt}")
+        if observation.image is None:
+            raise ValueError("VILA policy requires an RGB observation")
+        outputs = self.model.generate(
+            prompts=[prompt], images=[observation.image], return_probs=False
+        )
+        self.logger.info("VLM output: " + outputs[0])
+        vlm_plan = parse_json_output(outputs[0])
+        if 'plan' not in vlm_plan or not vlm_plan['plan']:
+            return None
+        first_action = vlm_plan['plan'][0]
+        action_params = [str(p) for p in first_action['parameters']]
+        return PolicyAction(
+            name=first_action['action'],
+            parameters=action_params,
+            raw_response=vlm_plan,
+            metadata={'vlm_plan': vlm_plan},
+        )
+
+
+def planning_loop(env, policy, problem, logger, img_output_dir, max_steps=50):
     previous_actions = []
     problem_results = {
         'plans': [],
@@ -110,87 +171,103 @@ def planning_loop(env, model, base_prompt, problem, logger, img_output_dir, max_
         'previous_actions': previous_actions,
         'completed': False,
     }
-    
+
     initial_max_steps = copy.deepcopy(max_steps)
 
     while not env.goal_reached and max_steps > 0:
         step = initial_max_steps - max_steps + 1
         logger.info(f"Step {step}")
         logger.info(f"Environment state before action:\n{env.state}")
-        prompt = base_prompt.replace("{previous_actions}", json.dumps(previous_actions))
-        priviledged_preds = env.priviledged_predicates
-        
-        if priviledged_preds is not None:
-            if all(priviledged_preds[predicate] == {} for predicate in priviledged_preds):
-                prompt = prompt.replace("## Additional information","")
-                prompt = prompt.replace("{priviledged_info}","")
-            else:
-                prompt = prompt.replace("{priviledged_info}", get_priviledged_predicates_str(priviledged_preds))
-        else:
-            prompt = prompt.replace("## Additional information","")
-            prompt = prompt.replace("{priviledged_info}","")
-            
-        logger.debug(f"Prompt:\n{prompt}")
-
         img = env.render()
-        outputs = model.generate(prompts=[prompt], images=[img], return_probs=False)
+        observation = PolicyObservation(
+            image=img,
+            problem=problem,
+            predicate_language=policy.predicate_language,
+            predicate_groundings=env.priviledged_predicates,
+            previous_actions=previous_actions,
+            context={'step': step},
+        )
 
-        logger.info("VLM output: " + outputs[0])
         try:
-            vlm_plan = parse_json_output(outputs[0])
+            policy_action = policy.next_action(observation)
         except json.JSONDecodeError as e:
             logger.error(f"Could not parse VLM output: {e}")
-            logger.error(f"VLM output: {outputs[0]}")
             break
-        problem_results['plans'].append(vlm_plan)
-        if 'explanation' in vlm_plan:
-            logger.info(f"VLM CoT: {vlm_plan['explanation']}")
+        except Exception as exc:
+            logger.error(f"Policy failed to return an action: {exc}")
+            break
 
-        first_action = None
+        if policy_action is None:
+            logger.warning("Policy returned no action; stopping episode")
+            break
+
+        problem_results['plans'].append(policy_action.raw_response)
+        action_repr = policy_action.as_env_command()
+        problem_results['actions'].append(action_repr)
+        logger.info(
+            f"First action: {policy_action.name}({', '.join(policy_action.parameters)})"
+        )
+
         try:
-            action = None
-            info = None
-            first_action = vlm_plan['plan'][0]
-            action_params = first_action['parameters']
-            action = f"{first_action['action']}({', '.join([str(p) for p in action_params])})"
-            problem_results['actions'].append({'action': action})
-            logger.info(f"First action: {action}")
-            success, info = env.apply_action(action=first_action['action'], params=action_params)
+            success, info = env.apply_action(
+                action=policy_action.name, params=list(policy_action.parameters)
+            )
         except Exception as e:
             logger.error(f"Unexpected error applying action: {e}")
-            problem_results['actions'].append({'action': action if action is not None else 'unknown action', 'success': False})
-            success = False
-            info = None
+            problem_results['actions'][-1]['success'] = False
+            problem_results['actions'][-1]['info'] = None
             wrong_parameters = False  # can't assume it's input-related
         else:
             problem_results['actions'][-1]['success'] = success
             problem_results['actions'][-1]['info'] = info
             wrong_parameters = not success
+            policy.observe_outcome(policy_action, success=success, info=info)
 
-        if first_action:
-            params_str = "-".join(first_action["parameters"])
-            outcome_str = first_action.get("outcome", "")
-            action_details_str = f'{first_action["action"]}_{params_str}_{outcome_str}'
+        if policy_action:
+            params_str = "-".join(policy_action.parameters)
+            action_details_str = f'{policy_action.name}_{params_str}'
         else:
             action_details_str = 'failed'
-        img.save(os.path.join(img_output_dir, f"env_render_{step}_{action_details_str}.png"))
-        
+        img.save(
+            os.path.join(
+                img_output_dir, f"env_render_{step}_{action_details_str}.png"
+            )
+        )
+
         # Failsafe for actions that don't exist
         try:
-            available_actions = [ a.name for a in problem.actions ]
-            logger.debug(f"Available actions: {available_actions}, first action: {first_action['action']}")
-            if first_action['action'] not in available_actions or action is None:
-                logger.warn(f"Action {first_action['action']} does not exist in the environment.")
-                previous_actions.append({'action': first_action['action'], 'outcome': 'action does not exist'})
+            available_actions = [a.name for a in problem.actions]
+            logger.debug(
+                f"Available actions: {available_actions}, first action: {policy_action.name}"
+            )
+            if policy_action.name not in available_actions:
+                logger.warn(
+                    f"Action {policy_action.name} does not exist in the environment."
+                )
+                previous_actions.append(
+                    {'action': policy_action.name, 'outcome': 'action does not exist'}
+                )
             else:
                 if wrong_parameters is not None and wrong_parameters:
-                    previous_actions.append({'action': first_action['action'], 'parameters': vlm_plan['plan'][0]['parameters'], 'outcome': 'parameters incorrectly specified'})
+                    previous_actions.append(
+                        {
+                            'action': policy_action.name,
+                            'parameters': list(policy_action.parameters),
+                            'outcome': 'parameters incorrectly specified'
+                        }
+                    )
                 else:
-                    previous_actions.append({'action': first_action['action'], 'parameters': action_params, 'outcome': 'executed' if success else 'failed'})
+                    previous_actions.append(
+                        {
+                            'action': policy_action.name,
+                            'parameters': list(policy_action.parameters),
+                            'outcome': 'executed' if success else 'failed'
+                        }
+                    )
         except Exception as e:
             logger.error(f"Something went wrong (e.g. plan is empty): {e}")
             break
-        
+
         logger.info(f"Action outcome: {'executed' if success else 'failed'}")
         if info is not None:
             logger.info(f"Info about action outcome: {info}")
@@ -200,12 +277,12 @@ def planning_loop(env, model, base_prompt, problem, logger, img_output_dir, max_
 
         max_steps -= 1
 
-    if env.goal_reached: 
+    if env.goal_reached:
         logger.info("Goal reached!")
         problem_results['completed'] = True
-    
+
     return problem_results
-        
+
 
 def main(
     problems_dir: os.PathLike,
@@ -218,6 +295,7 @@ def main(
     hf_cache_dir: os.PathLike = None,
     log_level ='info',
     max_steps: int = 10,
+    policy_cls: str = None,
     **kwargs):
     
     random.seed(seed)
@@ -238,6 +316,8 @@ def main(
     with open(prompt_path, 'r') as f:
         base_prompt = f.read()
     
+    PolicyCls = resolve_policy_class(policy_cls, DefaultVILAPolicy)
+
     results = {}
     metadata = os.path.join(problems_dir, "metadata.json")
     assert os.path.exists(metadata), f"Metadata file {metadata} not found"
@@ -261,11 +341,26 @@ def main(
             logger.info(f"Goal: {goal_string}")
             problem_prompt = base_prompt.replace("{goal_string}", goal_string)
 
+            policy = PolicyCls(
+                model=model,
+                base_prompt=problem_prompt,
+                predicate_language=preds_templates,
+                logger=logger,
+                problem=problem,
+            )
+
             img_output_dir = get_img_output_dir('vila', instance_id, scene_id, task)
 
             # Run planning loop
             logger.info("Starting planning loop...")
-            problem_results = planning_loop(env, model, problem_prompt, problem, logger, img_output_dir, max_steps=max_steps)
+            problem_results = planning_loop(
+                env,
+                policy,
+                problem,
+                logger,
+                img_output_dir,
+                max_steps=max_steps,
+            )
             results[f"{problem_file}_{scene_id}_{instance_id}"] = problem_results
     
     # Compute some statistics
