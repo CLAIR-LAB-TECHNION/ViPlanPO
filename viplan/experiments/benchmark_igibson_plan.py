@@ -265,7 +265,6 @@ def _save_vlm_question_images(questions, image, img_log_info, check_type, logger
     if not output_dir:
         return
 
-    os.makedirs(output_dir, exist_ok=True)
     problem_name = os.path.splitext(os.path.basename(img_log_info.get('problem_file', 'problem')))[0]
     scene_id = img_log_info.get('scene_id', 'scene')
     instance_id = img_log_info.get('instance_id', 'instance')
