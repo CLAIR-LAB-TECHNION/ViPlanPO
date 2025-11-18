@@ -17,12 +17,13 @@ from unified_planning.io import PDDLReader
 from unified_planning.environment import get_environment
 
 from viplan.code_helpers import get_logger, parse_output, get_unique_id
-from viplan.experiments.policy_interface import (
+from viplan.policies.policy_interface import (
     Policy,
     PolicyAction,
     PolicyObservation,
     resolve_policy_class,
 )
+from viplan.policies.policy_plan import DefaultPlanningPolicy
 from viplan.log_utils import get_img_output_dir
 from viplan.planning.igibson_client_env import iGibsonClient
 
@@ -108,28 +109,6 @@ def get_predicates_for_question(env, node, grounded_args, top_level=True, defaul
         raise ValueError("Unknown node type", node)
 
     return [result] if type(result) is dict else result
-
-
-class DefaultPlanningPolicy(Policy):
-    """Default policy that sequentially executes planner actions."""
-
-    def __init__(self, action_queue, logger=None, **kwargs):
-        predicate_language = kwargs.get('predicate_language', predicate_questions)
-        super().__init__(predicate_language=predicate_language)
-        self.action_queue = action_queue
-        self.logger = logger or get_logger()
-
-    def next_action(self, observation: PolicyObservation) -> Optional[PolicyAction]:
-        if not self.action_queue:
-            return None
-        action = self.action_queue.popleft()
-        if self.logger:
-            self.logger.debug(f"Policy selecting action {action}")
-        return PolicyAction(
-            name=action.action.name,
-            parameters=[str(p) for p in action.actual_parameters],
-            metadata={'plan_action': action},
-        )
 
 # Predicate sets for preconditions and effects
 
@@ -287,10 +266,12 @@ def _sanitize_filename_component(text):
 
 def _save_vlm_question_images(questions, image, img_log_info, check_type, logger):
     if not img_log_info:
+        raise KeyError('Missing img_log_info')
         return
 
     output_dir = img_log_info.get('img_output_dir')
     if not output_dir:
+        raise KeyError('Missing img_log_info.output_dir')
         return
 
     problem_name = os.path.splitext(os.path.basename(img_log_info.get('problem_file', 'problem')))[0]
@@ -311,7 +292,7 @@ def _save_vlm_question_images(questions, image, img_log_info, check_type, logger
     img_log_info['image_counter'] = counter
 
 
-def ask_vlm(questions, image, model, base_prompt, logger, env, img_log_info=None, check_type=None, **kwargs):
+def ask_vlm(questions, image, model, base_prompt, logger, env, img_log_info, check_type=None, **kwargs):
     base_prompt = open(base_prompt, 'r').read()
     prompts = [base_prompt + q[0] for q in questions.values()]
     images = [image for _ in questions]
@@ -411,7 +392,7 @@ def check_preconditions(env, vlm_state, preconditions, grounded_args, model, bas
             logger.warning("No questions to ask VLM")
             results = {}
         else:
-            results = ask_vlm(questions, env.render(), model, base_prompt, logger, env, img_log_info=img_log_info, check_type='precondition')
+            results = ask_vlm(questions, env.render(), model, base_prompt, logger, env, img_log_info, check_type='precondition')
             logger.debug(f"Precondition VLM results: {results}")
         
     # Check non visible predicates against vlm_state
@@ -430,7 +411,7 @@ def check_preconditions(env, vlm_state, preconditions, grounded_args, model, bas
     
     return results, non_visible_results
 
-def check_effects(env, vlm_state, effects, grounded_args, model, base_prompt, previous_state, logger, text_only=False, img_log_info=None):
+def check_effects(env, vlm_state, effects, grounded_args, model, base_prompt, previous_state, logger, img_log_info, text_only=False):
     effect_preds = get_effects_predicates(env, effects, grounded_args, previous_state)
     logger.debug(f"Effect predicates: {effect_preds}")
     visible_preds = env.visible_predicates
@@ -447,7 +428,7 @@ def check_effects(env, vlm_state, effects, grounded_args, model, base_prompt, pr
             logger.warning("No questions to ask VLM")
             results = {}
         else:
-            results = ask_vlm(questions, env.render(), model, base_prompt, logger, env, img_log_info=img_log_info, check_type='effect')
+            results = ask_vlm(questions, env.render(), model, base_prompt, logger, env, img_log_info, check_type='effect')
         
     # Update vlm_state with non visible preds using the PDDL expected value
     updated_non_visible_preds = {}
@@ -463,7 +444,7 @@ def check_effects(env, vlm_state, effects, grounded_args, model, base_prompt, pr
     results['updated_non_visible_preds'] = updated_non_visible_preds
     return results, vlm_state
 
-def check_action(env, action, vlm_state, model, base_prompt, logger, text_only=False, img_log_info=None):
+def check_action(env, action, vlm_state, model, base_prompt, logger, img_log_info, text_only=False):
     preconditions = action.action.preconditions
     effects = action.action.effects
     grounded_params = {param.name: str(value) for param, value in zip(action.action.parameters, action.actual_parameters)}
@@ -491,8 +472,7 @@ def check_action(env, action, vlm_state, model, base_prompt, logger, text_only=F
         return False, preconditions_results, non_visible_precond_results, None, False, info
     
     logger.info("Environment state after action\n" + str(env))
-    
-    effects_results, vlm_state = check_effects(env, vlm_state, effects, grounded_params, model, base_prompt, previous_state, logger, text_only=text_only, img_log_info=img_log_info)
+    effects_results, vlm_state = check_effects(env, vlm_state, effects, grounded_params, model, base_prompt, previous_state, logger, img_log_info, text_only=text_only)
     vlm_state, changed = update_vlm_state(vlm_state, effects_results)
     if len(changed) > 0:
         logger.debug("VLM state changed after effects:", changed)
@@ -632,6 +612,7 @@ def check_plan(env,
                model,
                base_prompt,
                logger,
+               img_log_info,
                replan=False,
                text_only=False,
                max_actions=20,
@@ -695,7 +676,7 @@ def check_plan(env,
         logger.info(f"Applying action {action}")
 
         try:
-            action_correct, preconditions_results, non_visible_precond_results, effects_results, action_state_correct, action_info = check_action(env, action, vlm_state, model, base_prompt, logger, text_only=text_only, img_log_info=img_log_info)
+            action_correct, preconditions_results, non_visible_precond_results, effects_results, action_state_correct, action_info = check_action(env, action, vlm_state, model, base_prompt, logger, img_log_info, text_only=text_only)
         except Exception as e:
             logger.warning(f"Error while checking action {action}: {e}")
             import traceback
@@ -938,6 +919,7 @@ def main(
     enumerate_replan: bool = True, # Enumerate predicates before replanning if there is a failure
     enum_batch_size: int = 64, # Batch size for enumeration
     max_steps: int = 20, # Max number of steps to take in the environment
+    policy_cls: str = None,
     **kwargs):
     
     # Ensure deterministic behavior (in theory)
@@ -1053,22 +1035,7 @@ def main(
                 model,
                 prompt_path,
                 logger,
-                replan=replan,
-                text_only=text_only,
-                enumerate_replan=enumerate_replan,
-                enum_batch_size=enum_batch_size,
-                max_actions=max_steps,
-                img_log_info=img_log_info,
-            )
-
-            all_correct, action_results, replans, action_queue, goal_reached = check_plan(
-                env,
-                plan,
-                problem,
-                vlm_state,
-                model,
-                prompt_path,
-                logger,
+                img_log_info,
                 replan=replan,
                 text_only=text_only,
                 enumerate_replan=enumerate_replan,

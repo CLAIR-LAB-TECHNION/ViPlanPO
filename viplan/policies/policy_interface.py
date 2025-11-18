@@ -23,7 +23,6 @@ try:  # PIL is an optional dependency at import time.
 except Exception:  # pragma: no cover - used only when PIL is not available.
     Image = Any  # type: ignore
 
-
 @dataclass
 class PolicyObservation:
     """Container describing the inputs that a policy can reason about."""
