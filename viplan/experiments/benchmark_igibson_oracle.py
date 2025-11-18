@@ -8,7 +8,8 @@ from collections import deque
 from unified_planning.shortcuts import *
 from unified_planning.io import PDDLReader
 
-from viplan.experiments.benchmark_igibson_plan import get_preconditions_predicates, get_effects_predicates, update_problem, get_plan
+from viplan.policies.policy_plan import get_preconditions_predicates, get_effects_predicates
+from viplan.planning.planning_utils import get_plan, update_problem
 from viplan.log_utils import get_img_output_dir
 from viplan.planning.igibson_client_env import iGibsonClient
 from viplan.code_helpers import get_logger, get_unique_id
