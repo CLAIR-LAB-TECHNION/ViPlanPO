@@ -17,12 +17,13 @@ from unified_planning.io import PDDLReader
 from unified_planning.environment import get_environment
 
 from viplan.code_helpers import get_logger, parse_output, get_unique_id
-from viplan.experiments.policy_interface import (
+from viplan.policies.policy_interface import (
     Policy,
     PolicyAction,
     PolicyObservation,
     resolve_policy_class,
 )
+from viplan.policies.policy_plan import DefaultPlanningPolicy
 from viplan.log_utils import get_img_output_dir
 from viplan.planning.igibson_client_env import iGibsonClient
 
@@ -108,28 +109,6 @@ def get_predicates_for_question(env, node, grounded_args, top_level=True, defaul
         raise ValueError("Unknown node type", node)
 
     return [result] if type(result) is dict else result
-
-
-class DefaultPlanningPolicy(Policy):
-    """Default policy that sequentially executes planner actions."""
-
-    def __init__(self, action_queue, logger=None, **kwargs):
-        predicate_language = kwargs.get('predicate_language', predicate_questions)
-        super().__init__(predicate_language=predicate_language)
-        self.action_queue = action_queue
-        self.logger = logger or get_logger()
-
-    def next_action(self, observation: PolicyObservation) -> Optional[PolicyAction]:
-        if not self.action_queue:
-            return None
-        action = self.action_queue.popleft()
-        if self.logger:
-            self.logger.debug(f"Policy selecting action {action}")
-        return PolicyAction(
-            name=action.action.name,
-            parameters=[str(p) for p in action.actual_parameters],
-            metadata={'plan_action': action},
-        )
 
 # Predicate sets for preconditions and effects
 
