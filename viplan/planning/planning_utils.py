@@ -1,5 +1,12 @@
+import copy
 import os
 import json
+import tempfile
+
+import unified_planning
+from unified_planning.environment import get_environment
+from unified_planning.shortcuts import OneshotPlanner
+
 
 def execute_plan(sim_env, plan, task, task_instance):
     # Create image directory
@@ -98,3 +105,67 @@ def print_symbolic_state(state, verbose=False):
                     
             print(k, true_states)
     print("-"*76)
+
+
+def get_plan(problem, logger):
+    result = None
+    try:
+        with OneshotPlanner(problem_kind=problem.kind) as planner:
+            # This is needed to avoid temporary file conflicts created in cwd from the planner in job arrays
+            with tempfile.TemporaryDirectory() as td:
+                old_cwd = os.getcwd()
+                try:
+                    os.chdir(td)  # Change to temporary directory
+                    result = planner.solve(problem)
+                finally:
+                    os.chdir(old_cwd)  # Restore original directory
+
+            if result.status == up.engines.PlanGenerationResultStatus.SOLVED_SATISFICING:
+                logger.debug("Fast Downward returned: %s" % result.plan)
+            else:
+                logger.warning("No plan found.")
+    except Exception as e:
+        logger.warning(f"Planner crashed with error: {e}")
+
+    return result
+
+
+def update_problem(state, problem):
+
+    def get_new_problem_fluent(new_problem, fluent):
+        for new_fluent in new_problem.initial_values:
+            if str(new_fluent) == str(fluent):
+                return new_fluent
+        return None
+
+    new_problem = copy.deepcopy(problem)
+
+    up_env = get_environment()
+    expr_manager = up_env.expression_manager
+
+    for fluent in problem.initial_values:
+
+        name = fluent.fluent().name
+        args = fluent.args
+        args_str = ",".join([str(arg) for arg in args])
+        value = problem.initial_values[fluent].is_true()
+        # TODO: solve KeyError: 'ontop' or 'inside' -> issue is in state not having the fluent name
+        # Track state and enforce that it always has a key for every fluent na,e in the problem.initial_values
+
+        # Quickfix / failsafe for now
+        if name not in state.keys():
+            continue
+
+        if args_str not in state[name]:
+            continue
+        state_value = state[name][args_str]
+        if value != state_value:
+            assert problem.initial_values[fluent].is_bool_constant()
+            new_fluent = get_new_problem_fluent(new_problem, fluent)
+            if new_fluent is None:
+                raise ValueError(f"Fluent {fluent} not found in new_problem")
+
+            new_problem.initial_values[new_fluent] = expr_manager.true_expression if state_value else expr_manager.false_expression
+            # print(f"Updating {new_fluent} from {problem.initial_values[fluent]} to {new_problem.initial_values[new_fluent]}")
+
+    return new_problem
