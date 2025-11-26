@@ -84,8 +84,8 @@ fi
 
 
 mkdir -p ./slurm
-module load mamba
-mamba activate ./viplan_env
+# module load mamba
+# mamba activate ./viplan_env
 
 gpu_flag=""
 if [ "$GPU_RENDERING" = "true" || "$GPU_RENDERING" = true ]; then
