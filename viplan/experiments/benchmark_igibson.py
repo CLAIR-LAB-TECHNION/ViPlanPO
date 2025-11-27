@@ -282,7 +282,7 @@ def main(
                     problem=problem,
                 )
 
-            img_output_dir = get_img_output_dir('vila', instance_id, scene_id, task)
+            img_output_dir = get_img_output_dir('vila', model_name, instance_id, scene_id, task)
 
             # Run planning loop
             logger.info("Starting planning loop...")

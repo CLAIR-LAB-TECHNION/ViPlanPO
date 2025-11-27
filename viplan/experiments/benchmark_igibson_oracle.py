@@ -210,7 +210,7 @@ def main(
         for scene_id, instance_id in scene_instance_pairs:
             env = iGibsonClient(task=task, scene_id=scene_id, instance_id=instance_id, problem=problem, base_url=base_url, logger=logger)
 
-            img_output_dir = get_img_output_dir('oracle', instance_id, scene_id, task)
+            img_output_dir = get_img_output_dir('oracle', 'oracle_planner', instance_id, scene_id, task)
 
             # Run planning loop
             success, replans = test_plan(env, img_output_dir, logger=logger, max_steps=max_steps)

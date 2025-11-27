@@ -3,8 +3,9 @@ import re
 import shutil
 
 
-def get_img_output_dir(work_mode, instance_id, scene_id, task) -> str:
-    img_output_dir = os.path.join(f'img/{work_mode}', f'{task}_{scene_id}_{instance_id}')
+def get_img_output_dir(work_mode, model_name, instance_id, scene_id, task) -> str:
+    model_dir = sanitize_filename_component(model_name)
+    img_output_dir = os.path.join(f'img/{work_mode}', model_dir, f'{task}_{scene_id}_{instance_id}')
     if os.path.exists(img_output_dir):
         shutil.rmtree(img_output_dir)
     os.makedirs(img_output_dir, exist_ok=True)

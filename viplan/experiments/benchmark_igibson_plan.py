@@ -529,7 +529,7 @@ def main(
                 continue
             plan = plan_result.plan
 
-            img_output_dir = get_img_output_dir('plan', instance_id, scene_id, task)
+            img_output_dir = get_img_output_dir('plan', model_name, instance_id, scene_id, task)
             img_log_info = {
                 'img_output_dir': img_output_dir,
                 'problem_file': problem_file,
