@@ -56,7 +56,7 @@ class JsonFormatter(logging.Formatter):
             "time": self.formatTime(record, self.datefmt),
             "level": record.levelname,
             # "name": record.name,
-            "message": record.getMessage(),
+            # "message": record.getMessage(), # Already in msg
             # "filename": record.filename,
             "lineno": record.lineno,
             # "process": record.process,
