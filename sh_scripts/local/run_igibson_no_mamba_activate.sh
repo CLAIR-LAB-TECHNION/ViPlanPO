@@ -51,7 +51,7 @@ fi
 # vila benchmarks
 if [[ "$RUN_VILA" == "true" ]]; then
     if [[ "$RUN_CLOSED_SOURCE" == "true" ]]; then
-        bash "$SCRIPT_DIR/benchmark_igibson_vila_array_closed.sh" "${forward_args[@]}"
+        bash "$SCRIPT_DIR/benchmark_igibson_vila_array_closed_no_mamba_activate.sh" "${forward_args[@]}"
     fi
     bash "$SCRIPT_DIR/benchmark_igibson_vila_array_no_mamba_activate.sh"     "${forward_args[@]}"
 fi
