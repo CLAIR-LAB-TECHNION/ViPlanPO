@@ -296,7 +296,8 @@ def main(
                 'scene_id': scene_id,
                 'instance_id': instance_id,
                 'policy_cls': policy_cls,
-                'model': model,
+                'use_predicate_groundings': use_predicate_groundings,
+                'model': model_name,
                 'completed': problem_results['completed'],
             })
 

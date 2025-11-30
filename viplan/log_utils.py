@@ -3,6 +3,7 @@ import logging
 import os
 import re
 import shutil
+from logging.handlers import RotatingFileHandler
 
 
 def get_img_output_dir(work_mode, instance_id, scene_id, task) -> str:
@@ -93,7 +94,7 @@ def get_task_logger(out_dir : os.PathLike, unique_id: str):
     max_bytes = 1024 * 1024  # 1 MB in bytes
     backup_count = 5  # Keep 5 backup files (app_size_rotated.log.1, .2, etc.)
 
-    handler = logging.handlers.RotatingFileHandler(
+    handler = RotatingFileHandler(
         filename=log_file_path,
         mode='a',
         maxBytes=max_bytes,
