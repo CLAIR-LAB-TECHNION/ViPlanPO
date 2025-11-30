@@ -86,7 +86,7 @@ def get_goal_str(env):
     return goal_string
 
 
-def planning_loop(env, policy, problem, logger, img_output_dir, max_steps=50):
+def planning_loop(env, policy, problem, logger, img_output_dir, max_steps=50, use_predicate_groundings=True):
     previous_actions = []
     problem_results = {
         'plans': [],
@@ -102,11 +102,12 @@ def planning_loop(env, policy, problem, logger, img_output_dir, max_steps=50):
         logger.info(f"Step {step}")
         logger.info(f"Environment state before action:\n{env.state}")
         img = env.render()
+        predicate_groundings = env.priviledged_predicates if use_predicate_groundings else None
         observation = PolicyObservation(
             image=img,
             problem=problem,
             predicate_language=policy.predicate_language,
-            predicate_groundings=env.priviledged_predicates,
+            predicate_groundings=predicate_groundings,
             previous_actions=previous_actions,
             context={'step': step},
         )
@@ -219,6 +220,7 @@ def main(
     log_level ='info',
     max_steps: int = 10,
     policy_cls: str = None,
+    use_predicate_groundings: bool = True,
     **kwargs):
     
     random.seed(seed)
@@ -283,6 +285,7 @@ def main(
                 logger,
                 img_output_dir,
                 max_steps=max_steps,
+                use_predicate_groundings=use_predicate_groundings,
             )
             results[f"{problem_file}_{scene_id}_{instance_id}"] = problem_results
     
@@ -320,6 +323,7 @@ def main(
         'prompt_path': prompt_path,
         'max_steps': max_steps,
         'job_id': unique_id,
+        'use_predicate_groundings': use_predicate_groundings,
     }
 
     logger.info(f"Action success rate: {action_success_rate}")

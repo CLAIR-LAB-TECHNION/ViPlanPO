@@ -5,6 +5,7 @@ set -euo pipefail
 SEED=1
 EXPERIMENT_NAME=""
 PROMPT_PATH="data/prompts/planning/vila_igibson_json.md"
+USE_PREDICATE_GROUNDINGS="true"
 
 # Parse additional arguments
 while [[ $# -gt 0 ]]; do
@@ -20,6 +21,10 @@ while [[ $# -gt 0 ]]; do
     --use_cot_prompt)
       PROMPT_PATH="data/prompts/planning/vila_igibson_json_cot.md"
       shift
+      ;;
+    --use_predicate_groundings)
+      USE_PREDICATE_GROUNDINGS="$2"
+      shift 2
       ;;
     *)
       echo "Unknown parameter: $1"
@@ -96,7 +101,8 @@ for MODEL in "${models[@]}"; do
       --prompt_path "${PROMPT_PATH}" \
       --output_dir "${OUTPUT_DIR}" \
       --max_steps "${MAX_STEPS}" \
-      --seed "${SEED}"
+      --seed "${SEED}" \
+      --use_predicate_groundings "${USE_PREDICATE_GROUNDINGS}"
 
     # clean up the server before next job
     echo "Stopping server on port ${PORT}…"
