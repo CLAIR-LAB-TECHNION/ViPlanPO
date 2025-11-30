@@ -1,4 +1,6 @@
 import os
+import time
+
 import fire
 import json
 import copy
@@ -87,7 +89,7 @@ def get_goal_str(env):
     return goal_string
 
 
-def planning_loop(env, policy, problem, logger, img_output_dir, max_steps=50, use_predicate_groundings=True):
+def planning_loop(env, policy, problem, logger, tasks_logger, log_extra, img_output_dir, max_steps=50, use_predicate_groundings=True):
     previous_actions = []
     problem_results = {
         'plans': [],
@@ -99,10 +101,14 @@ def planning_loop(env, policy, problem, logger, img_output_dir, max_steps=50, us
     initial_max_steps = copy.deepcopy(max_steps)
 
     while not env.goal_reached and max_steps > 0:
+        log_action_extra = log_extra.copy()
         step = initial_max_steps - max_steps + 1
+        log_action_extra['step'] = step
         logger.info(f"Step {step}")
         logger.info(f"Environment state before action:\n{env.state}")
+        start_time = time.time()
         img = env.render()
+        tasks_logger.info("Rendered env image", extra=log_action_extra | {'compute_time': time.time() - start_time})
         predicate_groundings = env.priviledged_predicates if use_predicate_groundings else None
         observation = PolicyObservation(
             image=img,
@@ -114,6 +120,7 @@ def planning_loop(env, policy, problem, logger, img_output_dir, max_steps=50, us
         )
 
         try:
+            start_time = time.time()
             policy_action = policy.next_action(observation)
         except json.JSONDecodeError as e:
             logger.error(f"Could not parse VLM output: {e}")
@@ -132,8 +139,14 @@ def planning_loop(env, policy, problem, logger, img_output_dir, max_steps=50, us
         logger.info(
             f"First action: {policy_action.name}({', '.join(policy_action.parameters)})"
         )
+        log_action_extra['action'] = policy_action.name
+        log_action_extra['parameters'] = policy_action.parameters
+        tasks_logger.info("Next action decided", extra=log_action_extra | {
+            'compute_time': time.time() - start_time,
+        })
 
         try:
+            start_time = time.time()
             success, info = env.apply_action(
                 action=policy_action.name, params=list(policy_action.parameters)
             )
@@ -153,11 +166,10 @@ def planning_loop(env, policy, problem, logger, img_output_dir, max_steps=50, us
             action_details_str = f'{policy_action.name}_{params_str}'
         else:
             action_details_str = 'failed'
-        img.save(
-            os.path.join(
-                img_output_dir, f"env_render_{step}_{action_details_str}.png"
-            )
-        )
+
+        log_action_extra['wrong_parameters'] = wrong_parameters
+        log_action_extra['action_success'] = problem_results['actions'][-1]['success']
+        log_action_extra['action_info'] = problem_results['actions'][-1]['info']
 
         # Failsafe for actions that don't exist
         try:
@@ -191,9 +203,28 @@ def planning_loop(env, policy, problem, logger, img_output_dir, max_steps=50, us
                     )
         except Exception as e:
             logger.error(f"Something went wrong (e.g. plan is empty): {e}")
+            tasks_logger.info("Something went wrong (e.g. plan is empty)", extra=log_action_extra | {
+                'e': e,
+            })
             break
 
+        log_action_extra['outcome'] = previous_actions[-1]['outcome']
+        tasks_logger.info("Action completed", extra=log_action_extra | {
+            'compute_time': time.time() - start_time,
+        })
+
+        start_time = time.time()
+        img.save(
+            os.path.join(
+                img_output_dir, f"env_render_{step}_{action_details_str}.png"
+            )
+        )
+        tasks_logger.info("Saved image", extra=log_action_extra | {
+            'compute_time': time.time() - start_time,
+        })
+
         logger.info(f"Action outcome: {'executed' if success else 'failed'}")
+
         if info is not None:
             logger.info(f"Info about action outcome: {info}")
         logger.info(f"Previous actions: {previous_actions}")
@@ -278,19 +309,7 @@ def main(
 
             img_output_dir = get_img_output_dir('vila', instance_id, scene_id, task)
 
-            # Run planning loop
-            logger.info("Starting planning loop...")
-            problem_results = planning_loop(
-                env,
-                policy,
-                problem,
-                logger,
-                img_output_dir,
-                max_steps=max_steps,
-                use_predicate_groundings=use_predicate_groundings,
-            )
-            results[f"{problem_file}_{scene_id}_{instance_id}"] = problem_results
-            tasks_logger.info('Finished planning loop', extra={
+            log_extra = {
                 'problem_file': problem_file,
                 'task': task,
                 'scene_id': scene_id,
@@ -298,8 +317,27 @@ def main(
                 'policy_cls': policy_cls,
                 'use_predicate_groundings': use_predicate_groundings,
                 'model': model_name,
-                'completed': problem_results['completed'],
-            })
+                'img_output_dir': img_output_dir
+            }
+
+            # Run planning loop
+            logger.info("Starting planning loop...")
+            start_time = time.time()
+            problem_results = planning_loop(
+                env,
+                policy,
+                problem,
+                logger,
+                tasks_logger,
+                log_extra,
+                img_output_dir,
+                max_steps=max_steps,
+                use_predicate_groundings=use_predicate_groundings,
+            )
+            results[f"{problem_file}_{scene_id}_{instance_id}"] = problem_results
+            log_extra['elapsed_time'] = time.time() - start_time
+            log_extra['completed'] = problem_results['completed']
+            tasks_logger.info('Finished planning loop', extra=log_extra)
 
     # Compute some statistics
     total_actions = 0
