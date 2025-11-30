@@ -1,3 +1,5 @@
+import json
+import logging
 import os
 import re
 import shutil
@@ -43,3 +45,76 @@ def save_vlm_question_images(questions, image, img_log_info, check_type, logger)
             logger.warning(f"Failed to save VLM image to {filepath}: {exc}")
 
     img_log_info['image_counter'] = counter
+
+
+class JsonFormatter(logging.Formatter):
+    """Formats log records as single-line JSON objects."""
+
+    def format(self, record):
+        json_record = {
+            "time": self.formatTime(record, self.datefmt),
+            "level": record.levelname,
+            # "name": record.name,
+            "message": record.getMessage(),
+            # "filename": record.filename,
+            "lineno": record.lineno,
+            # "process": record.process,
+            # "threadName": record.threadName
+        }
+
+        for key, value in record.__dict__.items():
+            if value is None:
+                continue
+            if key.startswith('_'):
+                continue
+            if key in ['name', 'levelname', 'pathname', 'lineno',
+                       'funcName', 'created', 'asctime', 'msecs',
+                       'relativeCreated', 'thread', 'threadName',
+                       'processName', 'process', 'message', 'module',
+                       'exc_info', 'exc_text', 'stack_info', 'extra']:
+                continue
+            json_record[key] = value
+        # Add extra fields passed via the 'extra' parameter
+        # json_record.update(record.__dict__.get('extra', {}
+
+        if record.exc_info:
+            json_record['exc_info'] = self.formatException(record.exc_info)
+
+        return json.dumps(json_record)
+
+
+def get_task_logger(out_dir : os.PathLike, unique_id: str):
+    logger = logging.getLogger(__name__)
+    logger.setLevel(logging.INFO)
+
+    # Log file configuration
+    log_file_path = os.path.join(out_dir, f'execution_{unique_id}.log')
+
+    max_bytes = 1024 * 1024  # 1 MB in bytes
+    backup_count = 5  # Keep 5 backup files (app_size_rotated.log.1, .2, etc.)
+
+    handler = logging.handlers.RotatingFileHandler(
+        filename=log_file_path,
+        mode='a',
+        maxBytes=max_bytes,
+        backupCount=backup_count
+    )
+
+    # Optional: Customize the suffix for rotated files to include the date clearly
+    handler.suffix = "%Y-%m-%d"
+
+    # 3. Apply the JsonFormatter to the handler
+    # The datefmt is required by the JsonFormatter's formatTime method
+    formatter = JsonFormatter(datefmt='%Y-%m-%d %H:%M:%S')
+    handler.setFormatter(formatter)
+
+    # 4. Add the handler to the logger
+    logger.addHandler(handler)
+
+    # Optional: Add a StreamHandler for console output as well
+    # console_handler = logging.StreamHandler(sys.stdout)
+    # console_formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+    # console_handler.setFormatter(console_formatter)
+    # logger.addHandler(console_handler)
+
+    return logger

@@ -9,10 +9,11 @@ import transformers
 
 from typing import Optional
 
+from tqdm import tqdm
 from unified_planning.shortcuts import *
 from unified_planning.io import PDDLReader
 
-from viplan.log_utils import get_img_output_dir
+from viplan.log_utils import get_img_output_dir, get_task_logger
 from viplan.planning.igibson_client_env import iGibsonClient
 from viplan.code_helpers import get_logger, load_vlm, get_unique_id
 from viplan.policies.policy_interface import (
@@ -229,7 +230,8 @@ def main(
     
     logger = get_logger(log_level=log_level)
     unique_id = get_unique_id(logger)
-        
+    tasks_logger = get_task_logger(out_dir=output_dir, unique_id=unique_id)
+
     if hf_cache_dir is None:
         hf_cache_dir = os.environ.get("HF_HOME", None)
         logger.debug(f"Using HF cache dir: {hf_cache_dir}")
@@ -251,14 +253,14 @@ def main(
     problem_files = [problem for problem in metadata.keys()]
     problem_files = [f"{problems_dir}/{problem}" for problem in problem_files]
     
-    for problem_file in problem_files:
+    for problem_file in tqdm(problem_files, desc="Problems"):
         logger.info(f"Loading problem {problem_file}")
         
         reader = PDDLReader()
         problem = reader.parse_problem(domain_file, problem_file)
         task = metadata[os.path.basename(problem_file)]['activity_name']
         scene_instance_pairs = metadata[os.path.basename(problem_file)]['scene_instance_pairs']
-        for scene_id, instance_id in scene_instance_pairs:
+        for scene_id, instance_id in tqdm(scene_instance_pairs, desc="Scene instances"):
             env = iGibsonClient(task=task, scene_id=scene_id, instance_id=instance_id, problem=problem, base_url=base_url, logger=logger)
             env.reset() # Reset = send a request to the server to re-initialize the task (also needed when switching tasks)
             
@@ -288,7 +290,16 @@ def main(
                 use_predicate_groundings=use_predicate_groundings,
             )
             results[f"{problem_file}_{scene_id}_{instance_id}"] = problem_results
-    
+            tasks_logger.info('Finished planning loop', extra={
+                'problem_file': problem_file,
+                'task': task,
+                'scene_id': scene_id,
+                'instance_id': instance_id,
+                'policy_cls': policy_cls,
+                'model': model,
+                'completed': problem_results['completed'],
+            })
+
     # Compute some statistics
     total_actions = 0
     total_success = 0
