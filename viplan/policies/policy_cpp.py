@@ -154,7 +154,7 @@ class PolicyCPP(Policy):
 
         # check causes for replanning
         replan = False
-        if self.current_plan is None:  # does plan exist?
+        if not self.current_plan:  # does plan exist?
             replan = True
         else:
             # check if the probability of the current belief set
@@ -384,6 +384,12 @@ class PolicyCPP(Policy):
 
             # determine fluent probability based on token probabilities
             if unknown_prob >= max(yes_prob, no_prob):
+                fluent_probs[fluent] = None  # no info
+            elif yes_prob == no_prob == 0.0:
+                self.task_logger.info(
+                    "VLM returned zero probabilities for both 'yes' and 'no' tokens.",
+                    extra = self.log_extra
+                )
                 fluent_probs[fluent] = None  # no info
             else:
                 fluent_probs[fluent] = yes_prob / (yes_prob + no_prob)  # normalized yes prob
