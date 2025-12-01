@@ -77,6 +77,7 @@ class OpenAIVQA:
         max_new_tokens: int = 512,
         temperature: float = 1.0,
         top_p: float = 1.0,
+        **kwargs,
     ) -> ChatCompletion:
         # convert images to base64 strings
         processed_images = [_preprocess_image(image) for image in images]
