@@ -57,7 +57,7 @@ def get_object_names_dict(up_problem: Problem) -> Dict[str, List[str]]:
 
 def get_all_grounded_predicates_for_objects(
     up_problem: Problem, objects: Optional[Dict[str, List[str]]] = None
-) -> List[str]:
+) -> List[FNode]:
     """Generate all possible grounded predicates for the given objects.
     
     Args:
@@ -77,7 +77,7 @@ def get_all_grounded_predicates_for_objects(
         for variable in p.signature:
             varlists.append(objects[variable.type.name])
         for assignment in product(*varlists):
-            grounded_predicates.append(f'{p.name}({",".join(assignment)})')
+            grounded_predicates.append(p(*assignment))
 
     return grounded_predicates
 
