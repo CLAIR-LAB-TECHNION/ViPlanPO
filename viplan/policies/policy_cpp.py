@@ -371,8 +371,8 @@ class PolicyCPP(Policy):
 
         # get VLM outputs for all fluent queries
         vlm_outputs = self.vlm_model(
-            images=images,
-            query_batch=fluent_queries,
+            images,
+            fluent_queries,
             *self.tokens_of_interest
         )
         
