@@ -41,10 +41,9 @@ class PolicyCPP(Policy):
         predicate_language: Dict[str, str],
         domain_file: str,
         problem_file: str,
-        vlm_model_id: str,
+        model_name: str,
         base_prompt: str,
-        task_logger: Logger,
-        log_extra: Dict[str, Any],
+        tasks_logger: Logger,
         conformant_prob: float = 0.8,
         belief_update_weight: float = 0.5,
         use_unknown_token: bool = True,
@@ -104,13 +103,13 @@ class PolicyCPP(Policy):
 
         # initialize the VLM model
         # currently only GPT-based OpenAI models are supported
-        if vlm_model_id.startswith(OPENAI_MODEL_ID_PREFIX):
+        if model_name.startswith(OPENAI_MODEL_ID_PREFIX):
             # expect the OpenAI API key to be set in the environment
             openai_api_key = os.environ["OPENAI_API_KEY"]
 
             # initialize the OpenAI API interface
             self.vlm_model = OpenAIVQA(
-                model_id=vlm_model_id,
+                model_id=model_name,
                 system_prompt=base_prompt,
                 api_key=openai_api_key,
                 max_new_tokens=1,  # we only need the first token's logprobs
@@ -118,7 +117,7 @@ class PolicyCPP(Policy):
             )
         else:
             raise NotImplementedError(
-                f"VLM model {vlm_model_id} not supported in PolicyCPP."
+                f"VLM model {model_name} not supported in PolicyCPP."
             )
 
         # select tokens for which we want to get probabilities
@@ -131,16 +130,21 @@ class PolicyCPP(Policy):
         
         self.base_prompt = base_prompt
         self.vlm_inference_kwargs = vlm_inference_kwargs
-        self.task_logger = task_logger
-        self.log_extra = log_extra
+        self.task_logger = tasks_logger
 
-    def next_action(self, observation: PolicyObservation) -> PolicyAction:
+    def next_action(self, observation: PolicyObservation, log_extra: Dict[str, Any]) -> PolicyAction:
         # if the previous action was executed, step action in belief space
+        if log_extra is None:
+            log_extra = dict()
         if (observation.previous_actions and
             self._prev_action is not None and
             observation.previous_actions[-1]['outcome'] == 'executed'):
             assert self.belief_set is not None, "Belief set is not initialized."
             self._belief_step(self._prev_action)
+
+        log_plan_extra = log_extra.copy()
+        log_plan_extra['conformant_prob'] = self.conformant_prob
+        log_plan_extra['belief_update_weight'] = self.belief_update_weight
 
         # get probabilistic grounding from the VLM
         vlm_prob_ground = self._estimate_fluent_prob(
@@ -168,12 +172,13 @@ class PolicyCPP(Policy):
             if not self._is_safe_action(next_action):
                 replan = True
 
+        log_plan_extra['replan'] = replan
         if replan:
             # set new belief set and plan
-            self._set_belief_set_and_plan()
+            self._set_belief_set_and_plan(log_plan_extra)
             
             self.task_logger.info(
-                "Replanning executed.", extra = self.log_extra
+                "Replanning executed.", extra=log_plan_extra
             )
 
         if self.current_plan is None:
@@ -219,7 +224,7 @@ class PolicyCPP(Policy):
 
         return total_prob
 
-    def _set_belief_set_and_plan(self) -> None:
+    def _set_belief_set_and_plan(self, log_plan_extra) -> None:
         self.belief_set = []
         self.current_plan = None
 
@@ -257,12 +262,14 @@ class PolicyCPP(Policy):
             total_prob += prob
             if total_prob >= self.conformant_prob:
                 break
-        
+        log_plan_extra['conformant_plan_success_probability'] = total_prob
+        log_plan_extra['num_selected_states'] = len(self.belief_set)
+
         # log info about new belief set and plan
         if self.current_plan is None:
             self.task_logger.warning(
                 "No conformant plan found for the current belief.",
-                extra = self.log_extra
+                extra=log_plan_extra
             )
 
         selected_states = [
@@ -274,11 +281,8 @@ class PolicyCPP(Policy):
         ]
         self.task_logger.info(
             "New belief set",
-            extra = {
-                **self.log_extra,
-                "selected_states": selected_states,
-                "num_selected_states": len(self.belief_set),
-                "conformant_plan_success_probability": total_prob
+            extra=log_plan_extra | {
+                "selected_states": selected_states
             }
         )
         
