@@ -82,6 +82,21 @@ class Policy:
 
         raise NotImplementedError
 
+# Source - https://stackoverflow.com/a/5883218
+# Posted by Duncan, modified by community. See post 'Timeline' for change history
+# Retrieved 2025-12-01, License - CC BY-SA 3.0
+
+def inheritors(klass):
+    subclasses = dict()
+    work = [klass]
+    while work:
+        parent = work.pop()
+        for child in parent.__subclasses__():
+            if child not in subclasses:
+                subclasses[child.__name__] = child
+                work.append(child)
+    return subclasses
+
 
 def resolve_policy_class(
     policy_path: Optional[str],
@@ -101,23 +116,25 @@ def resolve_policy_class(
     if not policy_path:
         return default_cls
 
-    if ":" in policy_path:
-        module_name, class_name = policy_path.split(":", maxsplit=1)
-    else:
-        parts = policy_path.rsplit(".", maxsplit=1)
-        if len(parts) != 2:
-            raise ValueError(
-                "policy_path must be in the form 'module:Class' or 'module.Class'"
-            )
-        module_name, class_name = parts
+    return inheritors(Policy)[policy_path]
 
-    module = importlib.import_module(module_name)
-    policy_cls = getattr(module, class_name)
-
-    if not issubclass(policy_cls, Policy):  # pragma: no cover - defensive.
-        raise TypeError(
-            f"Resolved class {policy_cls.__name__} is not a Policy subclass"
-        )
-
-    return policy_cls
+    # if ":" in policy_path:
+    #     module_name, class_name = policy_path.split(":", maxsplit=1)
+    # else:
+    #     parts = policy_path.rsplit(".", maxsplit=1)
+    #     if len(parts) != 2:
+    #         raise ValueError(
+    #             "policy_path must be in the form 'module:Class' or 'module.Class'"
+    #         )
+    #     module_name, class_name = parts
+    #
+    # module = importlib.import_module(module_name)
+    # policy_cls = getattr(module, class_name)
+    #
+    # if not issubclass(policy_cls, Policy):  # pragma: no cover - defensive.
+    #     raise TypeError(
+    #         f"Resolved class {policy_cls.__name__} is not a Policy subclass"
+    #     )
+    #
+    # return policy_cls
 

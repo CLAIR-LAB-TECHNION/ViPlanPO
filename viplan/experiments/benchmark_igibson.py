@@ -270,9 +270,9 @@ def main(
     seed: int = 1,
     output_dir: os.PathLike = None,
     hf_cache_dir: os.PathLike = None,
-    log_level ='info',
+    log_level = 'info',
     max_steps: int = 10,
-    policy_cls: str = None,
+    policy_cls: str = 'DefaultVILAPolicy',
     use_predicate_groundings: bool = True,
     **kwargs):
     
@@ -295,7 +295,7 @@ def main(
     with open(prompt_path, 'r') as f:
         base_prompt = f.read()
     
-    PolicyCls = resolve_policy_class(policy_cls, DefaultPlanningPolicy)
+    PolicyCls = resolve_policy_class(policy_cls, DefaultVILAPolicy)
 
     results = {}
     metadata = os.path.join(problems_dir, "metadata.json")
@@ -343,7 +343,7 @@ def main(
                 'task': task,
                 'scene_id': scene_id,
                 'instance_id': instance_id,
-                'policy_cls': policy_cls,
+                'policy_cls': PolicyCls.__name__,
                 'use_predicate_groundings': use_predicate_groundings,
                 'model': model_name,
                 'img_output_dir': img_output_dir,

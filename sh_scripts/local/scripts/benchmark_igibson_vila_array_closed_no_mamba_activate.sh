@@ -77,7 +77,7 @@ for MODEL in "${models[@]}"; do
     mkdir -p "${OUTPUT_DIR}"
 
     # Run the benchmark
-    python3 -m viplan.experiments.benchmark_igibson_vila \
+    python3 -m viplan.experiments.benchmark_igibson \
       --base_url "${BASE_URL}" \
       --model_name "${MODEL}" \
       --domain_file "${DOMAIN_FILE}" \
