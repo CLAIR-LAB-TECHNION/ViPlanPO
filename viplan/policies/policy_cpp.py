@@ -300,7 +300,7 @@ class PolicyCPP(Policy):
                 vlm_logit * self.belief_update_weight
             )
             
-            self.factored_belief[fluent] = expit(updated_logit)
+            self.factored_belief[fluent] = float(expit(updated_logit))
 
     def _belief_step(self, action: ActionInstance) -> None:
         new_belief_set = []
