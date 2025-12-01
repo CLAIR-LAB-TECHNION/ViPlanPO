@@ -1,4 +1,5 @@
 import json
+import sys
 import time
 from pathlib import Path
 from typing import List, Dict, Any
@@ -72,20 +73,29 @@ def parse_lines(lines: List[str], source: Path) -> List[Dict[str, Any]]:
     return records
 
 
-def print_stats(df: pd.DataFrame) -> None:
+def _render(lines: List[str]) -> None:
+    """Render output in-place so the display remains stable."""
+
+    content = "\n".join(lines)
+    sys.stdout.write("\033[2J\033[H" + content + "\n")
+    sys.stdout.flush()
+
+
+def build_stats_lines(df: pd.DataFrame) -> List[str]:
     loops = df[df.get("msg") == "Finished planning loop"]
     total = len(loops)
     if total == 0:
-        print("No \"Finished planning loop\" entries yet.")
-        return
+        return ["No \"Finished planning loop\" entries yet."]
 
     successes = loops["completed"].fillna(False).astype(bool).sum()
     success_rate = successes / total if total else 0
     failures = total - successes
-    print(
-        f"Planning loops: {total} | Completed: {successes} "
-        f"({success_rate:.1%}) | Failures: {failures}"
-    )
+    lines = [
+        (
+            f"Planning loops: {total} | Completed: {successes} "
+            f"({success_rate:.1%}) | Failures: {failures}"
+        )
+    ]
 
     if failures:
         failure_reasons = (
@@ -93,10 +103,12 @@ def print_stats(df: pd.DataFrame) -> None:
             .fillna("unknown")
             .value_counts()
         )
-        print("Failure reasons:")
+        lines.append("Failure reasons:")
         for reason, count in failure_reasons.items():
             share = count / failures if failures else 0
-            print(f"  - {reason}: {count} ({share:.1%})")
+            lines.append(f"  - {reason}: {count} ({share:.1%})")
+
+    return lines
 
 
 def monitor_logs(results_dir: Path, poll_interval: float = 2.0, stale_seconds: float = 60.0) -> None:
@@ -109,10 +121,10 @@ def monitor_logs(results_dir: Path, poll_interval: float = 2.0, stale_seconds: f
         if current_file is None:
             current_file = find_latest_log_file(results_dir)
             if current_file is None:
-                print(f"No JSONL log files found in {results_dir}. Retrying...")
+                _render([f"No JSONL log files found in {results_dir}. Retrying..."])
                 time.sleep(poll_interval)
                 continue
-            print(f"Watching log file: {current_file}")
+            _render([f"Watching log file: {current_file}"])
             handle = current_file.open("r", encoding="utf-8")
             position = 0
             buffer = []
@@ -125,11 +137,18 @@ def monitor_logs(results_dir: Path, poll_interval: float = 2.0, stale_seconds: f
         if new_records:
             buffer.extend(new_records)
             df = pd.DataFrame(buffer)
-            print_stats(df)
+            _render(build_stats_lines(df))
         else:
             file_age = time.time() - current_file.stat().st_mtime
             if file_age > stale_seconds:
-                print("No updates detected for 60 seconds. Searching for a new log file...")
+                _render(
+                    [
+                        (
+                            "No updates detected for "
+                            f"{int(stale_seconds)} seconds. Searching for a new log file..."
+                        )
+                    ]
+                )
                 handle.close()
                 current_file = None
                 continue
