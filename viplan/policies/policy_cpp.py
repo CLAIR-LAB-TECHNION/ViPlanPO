@@ -136,7 +136,10 @@ class PolicyCPP(Policy):
 
     def next_action(self, observation: PolicyObservation) -> PolicyAction:
         # if the previous action was executed, step action in belief space
-        if observation.previous_actions[-1]['outcome'] == 'executed':
+        if (observation.previous_actions and
+            self._prev_action is not None and
+            observation.previous_actions[-1]['outcome'] == 'executed'):
+            assert self.belief_set is not None, "Belief set is not initialized."
             self._belief_step(self._prev_action)
 
         # get probabilistic grounding from the VLM
@@ -162,8 +165,7 @@ class PolicyCPP(Policy):
 
             # check if next action is safe
             next_action = self.current_plan[0]
-            is_safe = self._belief_step(next_action)
-            if not is_safe:
+            if not self._is_safe_action(next_action):
                 replan = True
 
         if replan:
@@ -296,7 +298,7 @@ class PolicyCPP(Policy):
             
             self.factored_belief[fluent] = expit(updated_logit)
 
-    def _belief_step(self, action: ActionInstance) -> bool:
+    def _belief_step(self, action: ActionInstance) -> None:
         new_belief_set = []
         for state in self.belief_set:
             # create a UPState object from the state dict
@@ -307,12 +309,6 @@ class PolicyCPP(Policy):
                     for fluent, v in state.items()
                 }
             )
-
-            # check action applicability            
-            if not self._sim.is_action_applicable(up_state, action):
-                # action not applicable in this state
-                # unsafe action
-                return False
                 
             # step the simulator to get the next state
             next_state = self._sim.get_next_state(up_state, action)
@@ -336,9 +332,24 @@ class PolicyCPP(Policy):
 
         # set belief to the new belief set
         self.belief_set = merged_belief_set
+    
+    def _is_safe_action(self, action: ActionInstance) -> bool:
+        for state in self.belief_set:
+            # create a UPState object from the state dict
+            up_state = state_dict_to_up_state(
+                self._sim.problem,
+                {
+                    str(fluent): v
+                    for fluent, v in state.items()
+                }
+            )
 
-        # action was applicable in all states.
-        # safe action
+            # check action applicability            
+            if not self._sim.is_action_applicable(up_state, action):
+                # action not applicable in this state
+                return False
+        
+        # action applicable in all states
         return True
         
     def _format_prompt(self, fluent: FNode) -> str:
