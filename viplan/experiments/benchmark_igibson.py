@@ -26,6 +26,7 @@ from viplan.policies.policy_interface import (
 
 from viplan.policies.policy_plan import DefaultPlanningPolicy
 from viplan.policies.policy_vila import DefaultVILAPolicy, preds_templates
+from viplan.policies.policy_cpp import PolicyCPP
 
 goal_templates = {
     'reachable': {
@@ -275,7 +276,7 @@ def main(
     hf_cache_dir: os.PathLike = None,
     log_level = 'info',
     max_steps: int = 10,
-    policy_cls: str = 'DefaultVILAPolicy',
+    policy_cls: str = 'PolicyCPP',
     use_predicate_groundings: bool = True,
     **kwargs):
     
@@ -332,6 +333,8 @@ def main(
                 )
             else:
                 policy = PolicyCls(
+                    domain_file=domain_file,
+                    problem_file=problem_file,
                     model=model,
                     base_prompt=problem_prompt,
                     predicate_language=preds_templates,
