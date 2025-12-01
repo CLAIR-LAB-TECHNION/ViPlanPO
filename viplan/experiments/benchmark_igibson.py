@@ -131,18 +131,21 @@ def planning_loop(
             context={'step': step},
         )
 
+        policy_action = None
+        policy_error = 'unknown'
         try:
             start_time = time.time()
             policy_action = policy.next_action(observation)
         except json.JSONDecodeError as e:
             logger.error(f"Could not parse VLM output: {e}")
-            break
+            policy_error = 'Could not parse VLM output'
         except Exception as exc:
             logger.error(f"Policy failed to return an action: {exc}")
-            break
+            policy_error = 'Policy failed to return an action'
 
         if policy_action is None:
             logger.warning("Policy returned no action; stopping episode")
+            log_extra['policy_error'] = policy_error # Goes back up to for logging by caller
             break
 
         problem_results['plans'].append(policy_action.raw_response)
