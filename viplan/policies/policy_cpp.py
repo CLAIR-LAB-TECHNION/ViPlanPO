@@ -218,7 +218,7 @@ class PolicyCPP(Policy):
         return total_prob
 
     def _set_belief_set_and_plan(self) -> None:
-        self.belief_set = set()
+        self.belief_set = []
         self.current_plan = None
 
         # accumulate probability mass until reaching threshold
@@ -234,7 +234,7 @@ class PolicyCPP(Policy):
             # based on all states selected so far.
             set_cp_initial_state_constraints_from_belief(
                 self.contingent_problem,
-                self.belief_set | {state}
+                self.belief_set + [state]
             )
 
             # try to find a conformant plan for the current belief set
@@ -248,7 +248,7 @@ class PolicyCPP(Policy):
             
             # found a conformant plan, add this state to the belief set
             # and save plan
-            self.belief_set.add(state)
+            self.belief_set.append(state)
             self.current_plan = extract_conformant_plan(plan_res.plan.root_node)
 
             # check if we reached the conformant probability threshold
@@ -297,8 +297,7 @@ class PolicyCPP(Policy):
             self.factored_belief[fluent] = expit(updated_logit)
 
     def _belief_step(self, action: ActionInstance) -> bool:
-        new_belief_set = set()
-        is_safe = True
+        new_belief_set = []
         for state in self.belief_set:
             # create a UPState object from the state dict
             up_state = state_dict_to_up_state(
@@ -309,80 +308,38 @@ class PolicyCPP(Policy):
                 }
             )
 
-            # check action applicability
-            if action.action.name.startswith('navigate-to'):
-                # There are some compatibility issues with running the simulation
-                # with navigate-to actions due to CPOR using unified planning
-                # version 0.6.0.
-                # Manually check navigate-to preconditions here.
-                navigation_target = action.actual_parameters[0]
-                
-                # check if target is reachable
-                reachable_fluent = self._sim.problem.fluents.get('reachable')
-                target_reachable_fluent = reachable_fluent(navigation_target)
-                target_reachable_value = state[target_reachable_fluent]
-
-                # check if inside any closed container
-                inside_fluent = self._sim.problem.fluents.get('inside')
-                open_fluent = self._sim.problem.fluents.get('open')
-                container_type = self._sim.problem.user_type('container')
-                container_objects = self._sim.problem.objects(container_type)
-                is_inside_any_container = any(
-                    state[inside_fluent(navigation_target, container)] and not state[open_fluent(container)]
-                    for container in container_objects
-                )
-                
-                # action is applicable if the target is not currently reachable and not inside any closed container
-                is_applicable = not target_reachable_value and not is_inside_any_container
-                is_safe &= is_applicable
-            else:
-                is_safe &= self._sim.is_action_applicable(up_state, action)
-            
-            if not is_safe:
-                break
+            # check action applicability            
+            if not self._sim.is_action_applicable(up_state, action):
+                # action not applicable in this state
+                # unsafe action
+                return False
                 
             # step the simulator to get the next state
-            if action.action.name.startswith('navigate-to'): 
-                navigation_target = action.actual_parameters[0]
-                
-                # set target as reachable
-                reachable_fluent = self._sim.problem.fluents.get('reachable')
-                target_reachable_fluent = reachable_fluent(navigation_target)
-                state[target_reachable_fluent] = True
+            next_state = self._sim.get_next_state(up_state, action)
 
-                # set all other objects as unreachable
-                for obj in self._sim.problem.all_objects():
-                    if obj != navigation_target:
-                        other_reachable_fluent = reachable_fluent(obj)
-                        state[other_reachable_fluent] = False
-                
-                # if navigated to a container and the container is open, set its contents as reachable if open
-                container_type = self._sim.problem.user_type('container')
-                open_fluent = self._sim.problem.fluents.get('open')
-                if navigation_target.type == container_type and state[open_fluent(navigation_target)]:
-                    inside_fluent = self._sim.problem.fluents.get('inside')
-                    for obj in self._sim.problem.all_objects():
-                        if state[inside_fluent(obj, navigation_target)]:
-                            reachable_fluent_obj = reachable_fluent(obj)
-                            state[reachable_fluent_obj] = True
-                
-                new_belief_set.add(state)
-            else:
-                next_state = self._sim.get_next_state(up_state, action)
+            # convert the UPState back to a dict representation
+            next_state_dict = {
+                fluent: next_state.get_value(fluent)
+                for fluent in self.factored_belief.keys()
+            }
 
-                # convert the UPState back to a dict representation
-                next_state_dict = {
-                    fluent: next_state.get_value(fluent)
-                    for fluent in self.factored_belief.keys()
-                }
+            new_belief_set.append(next_state_dict)
+        
+        # merge duplicate states in the new belief set
+        merged_belief_set = []
+        seen_states = set()
+        for state in new_belief_set:
+            state_tuple = tuple(sorted(state.items()))
+            if state_tuple not in seen_states:
+                seen_states.add(state_tuple)
+                merged_belief_set.append(state)
 
-                new_belief_set.add(next_state_dict)
-            
         # set belief to the new belief set
-        if is_safe:
-            self.belief_set = new_belief_set
+        self.belief_set = merged_belief_set
 
-        return is_safe
+        # action was applicable in all states.
+        # safe action
+        return True
         
     def _format_prompt(self, fluent: FNode) -> str:
         fluent_name = fluent.fluent().name
