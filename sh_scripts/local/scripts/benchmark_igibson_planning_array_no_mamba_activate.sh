@@ -88,7 +88,7 @@ for MODEL in "${models[@]}"; do
       OUTPUT_DIR="results/planning/igibson/predicates/${PROBLEM_SPLIT}/${model_short}"
     fi
 
-    python3 -m viplan.experiments.benchmark_igibson_plan \
+    python3 -m viplan.experiments.benchmark_igibson \
       --base_url "${BASE_URL}" \
       --model_name "${MODEL}" \
       --domain_file "$DOMAIN_FILE" \
