@@ -29,6 +29,7 @@ dependencies:
   - cuda-nvcc>=12.4,<12.5
   - cuda-libraries-dev>=12.4,<12.5
   - cmake
+  - mono
   - llama-index
   - llama-index-llms-openai
   - llama-index-readers-file
@@ -43,6 +44,8 @@ dependencies:
       - torchvision==0.21.0
       - torchaudio==2.6.0
       - --extra-index-url https://download.pytorch.org/whl/cu124
+      - scipy
+      - git+https://github.com/guyazran/up-cpor
       - vllm==0.8.3
       - peft
       - bitsandbytes
