@@ -67,15 +67,11 @@ def get_all_grounded_predicates_for_objects(
     Returns:
         List of all possible grounded predicate strings.
     """
-    predicates = up_problem.fluents
-    if objects is None:
-        objects = get_object_names_dict(up_problem)
-
     grounded_predicates = []
-    for p in predicates:
+    for p in up_problem.fluents:
         varlists = []
         for variable in p.signature:
-            varlists.append(objects[variable.type.name])
+            varlists.append(list(up_problem.objects(variable.type)))
         for assignment in product(*varlists):
             grounded_predicates.append(p(*assignment))
 
