@@ -35,7 +35,6 @@ class OpenAIVQA:
             self.estimation_query(
                 images=images,
                 query=query,
-                system=self.system_prompt,
                 **self.inference_kwargs,
             )
             for query in query_batch
