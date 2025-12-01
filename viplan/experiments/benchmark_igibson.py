@@ -136,7 +136,7 @@ def planning_loop(
         policy_error = 'unknown'
         try:
             start_time = time.time()
-            policy_action = policy.next_action(observation)
+            policy_action = policy.next_action(observation, log_action_extra)
         except json.JSONDecodeError as e:
             logger.error(f"Could not parse VLM output: {e}")
             policy_error = 'Could not parse VLM output'
@@ -324,24 +324,6 @@ def main(
             logger.info(f"Goal: {goal_string}")
             problem_prompt = base_prompt.replace("{goal_string}", goal_string)
 
-            if issubclass(PolicyCls, DefaultPlanningPolicy):
-                action_queue = deque()
-                policy = PolicyCls(
-                    action_queue=action_queue,
-                    predicate_language=preds_templates,
-                    logger=logger,
-                )
-            else:
-                policy = PolicyCls(
-                    domain_file=domain_file,
-                    problem_file=problem_file,
-                    model=model,
-                    base_prompt=problem_prompt,
-                    predicate_language=preds_templates,
-                    logger=logger,
-                    problem=problem,
-                )
-
             img_output_dir = get_img_output_dir('vila', instance_id, scene_id, task)
 
             log_extra = {
@@ -354,6 +336,26 @@ def main(
                 'model': model_name,
                 'img_output_dir': img_output_dir,
             }
+
+            if issubclass(PolicyCls, DefaultPlanningPolicy):
+                action_queue = deque()
+                policy = PolicyCls(
+                    action_queue=action_queue,
+                    predicate_language=preds_templates,
+                    logger=logger,
+                )
+            else:
+                policy = PolicyCls(
+                    predicate_language=preds_templates,
+                    domain_file=domain_file,
+                    problem_file=problem_file,
+                    model=model,
+                    model_name=model_name,
+                    base_prompt=problem_prompt,
+                    tasks_logger=tasks_logger,
+                    logger=logger,
+                    problem=problem,
+                )
 
             # Run planning loop
             logger.info("Starting planning loop...")

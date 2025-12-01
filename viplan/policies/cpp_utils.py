@@ -18,6 +18,7 @@ def _do_required_compilations(problem: Problem) -> Problem:
                     compilation_kind=CompilationKind.DISJUNCTIVE_CONDITIONS_REMOVING) as compiler:
             problem = compiler.compile(problem,
                                     CompilationKind.DISJUNCTIVE_CONDITIONS_REMOVING).problem
+    return problem
 
 
 def to_contingent_problem(problem: Problem) -> ContingentProblem:

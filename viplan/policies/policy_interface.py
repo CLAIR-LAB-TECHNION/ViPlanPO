@@ -77,7 +77,7 @@ class Policy:
     ) -> None:
         """Optional hook to receive action outcomes from the simulator."""
 
-    def next_action(self, observation: PolicyObservation) -> Optional[PolicyAction]:
+    def next_action(self, observation: PolicyObservation, log_extra: Dict[str, Any]) -> Optional[PolicyAction]:
         """Return the next action to execute inside the simulator."""
 
         raise NotImplementedError

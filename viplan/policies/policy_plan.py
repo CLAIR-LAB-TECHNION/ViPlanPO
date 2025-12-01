@@ -1,5 +1,5 @@
 import copy
-from typing import Optional
+from typing import Optional, Dict, Any
 
 from viplan.code_helpers import get_logger, parse_output
 from viplan.log_utils import save_vlm_question_images
@@ -14,7 +14,7 @@ class DefaultPlanningPolicy(Policy):
         self.action_queue = action_queue
         self.logger = logger or get_logger()
 
-    def next_action(self, observation: PolicyObservation) -> Optional[PolicyAction]:
+    def next_action(self, observation: PolicyObservation, log_extra: Dict[str, Any]) -> Optional[PolicyAction]:
         if not self.action_queue:
             return None
         action = self.action_queue.popleft()

@@ -63,7 +63,7 @@ class DefaultVILAPolicy(Policy):
             prompt = prompt.replace("{priviledged_info}", "")
         return prompt
 
-    def next_action(self, observation: PolicyObservation) -> Optional[PolicyAction]:
+    def next_action(self, observation: PolicyObservation, log_extra: Dict[str, Any]) -> Optional[PolicyAction]:
         prompt = self._format_prompt(observation)
         self.logger.debug(f"Prompt:\n{prompt}")
         if observation.image is None:
