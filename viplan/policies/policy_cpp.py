@@ -98,8 +98,8 @@ class PolicyCPP(Policy):
 
         # create planner to avoid recreating it at each replan
         env = environment.get_environment()
-        env.factory.add_engine('CPORPlanning', 'up_cpor.engine', 'CPORImpl')
-        self.planner = OneshotPlanner(name='CPORPlanning')
+        env.factory.add_meta_engine('MetaCPORPlanning', 'up_cpor.engine', 'CPORMetaEngineImpl')
+        self.planner = OneshotPlanner(name='MetaCPORPlanning[fast-downward]')
         self.planner_timeout = planner_timeout
 
         # initialize the VLM model
