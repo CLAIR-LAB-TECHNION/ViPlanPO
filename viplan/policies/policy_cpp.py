@@ -64,7 +64,7 @@ class PolicyCPP(Policy):
         # create a mapping so we can translate actions back to the original problem.
         # the environment will expect actions from the original problem.
         self.action_mapping = get_mapping_from_compiled_actions_to_original_actions(
-            orig_problem, self.contingent_problem
+            self.contingent_problem, orig_problem
         )
 
         # set the conformant probability threshold for choosing the states in the belief.
