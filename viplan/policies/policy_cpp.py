@@ -395,7 +395,8 @@ class PolicyCPP(Policy):
     def _all_fluent_prompts(self, fluents: List[FNode]):
         return [self._format_prompt(fluent) for fluent in fluents]
 
-    def _estimate_fluent_prob(self, images: Image, fluent_list: List[FNode]) -> Dict[Any, Optional[float]]:
+    def _estimate_fluent_prob(self, images: Image, fluent_list: List[FNode],
+                              clamp_epsilon=1e-6) -> Dict[Any, Optional[float]]:
         # get a query for each fluent
         fluent_queries = self._all_fluent_prompts(fluent_list)
 
@@ -421,7 +422,15 @@ class PolicyCPP(Policy):
                 fluent_probs[fluent] = None  # no info
             else:
                 # normalized yes probability
-                fluent_probs[fluent] = float(yes_prob / (yes_prob + no_prob))
+                fluent_probs[fluent] = yes_prob / (yes_prob + no_prob)
+
+                # clamp to [epsilon, 1 - epsilon] to avoid numerical issues
+                fluent_probs[fluent] = np.clip(
+                    fluent_probs[fluent], clamp_epsilon, 1 - clamp_epsilon
+                )
+
+                # convert to float
+                fluent_probs[fluent] = float(fluent_probs[fluent])
 
         return fluent_probs
 
