@@ -50,6 +50,7 @@ class PolicyCPP(Policy):
         tasks_logger: Logger,
         conformant_prob: float = 0.8,
         belief_update_weight: float = 0.5,
+        blind_plan_execution: bool = True,
         use_unknown_token: bool = True,
         use_fd_constraints: bool = True,
         planner_timeout: Optional[float] = None,
@@ -137,6 +138,7 @@ class PolicyCPP(Policy):
                 ["unknown", "Unknown"]
             )
 
+        self.blind_plan_execution = blind_plan_execution
         self.base_prompt = base_prompt
         self.vlm_inference_kwargs = vlm_inference_kwargs
         self.task_logger = tasks_logger
@@ -152,7 +154,8 @@ class PolicyCPP(Policy):
         # if the previous action was executed, step action in belief space
         if log_extra is None:
             log_extra = dict()
-        if (observation.previous_actions and
+        if (not self.blind_plan_execution and
+            observation.previous_actions and
             self._prev_action is not None and
             observation.previous_actions[-1]['outcome'] == 'executed'):
             assert self.belief_set is not None, "Belief set is not initialized."
@@ -178,19 +181,19 @@ class PolicyCPP(Policy):
         if not self.current_plan:  # does plan exist?
             replan = True
             replan_reason += "no current plan; "
-        # else:
-        #     # check if the probability of the current belief set
-        #     # still meets the conformant probability threshold
-        #     total_belief_prob = self._get_current_belief_set_probability()
-        #     if total_belief_prob < self.conformant_prob:
-        #         replan = True
-        #         replan_reason += "belief probability below threshold; "
+        elif not self.blind_plan_execution:
+            # check if the probability of the current belief set
+            # still meets the conformant probability threshold
+            total_belief_prob = self._get_current_belief_set_probability()
+            if total_belief_prob < self.conformant_prob:
+                replan = True
+                replan_reason += "belief probability below threshold; "
 
-        #     # check if next action is safe
-        #     next_action = self.action_mapping(self.current_plan[0])
-        #     if not self._is_safe_action(next_action):
-        #         replan = True
-        #         replan_reason += "next action not safe; "
+            # check if next action is safe
+            next_action = self.action_mapping(self.current_plan[0])
+            if not self._is_safe_action(next_action):
+                replan = True
+                replan_reason += "next action not safe; "
 
         log_plan_extra['replan'] = replan
         if replan:
