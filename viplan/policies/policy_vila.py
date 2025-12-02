@@ -16,7 +16,12 @@ preds_templates = {
 def parse_json_output(output):
     json_start = output.find('{')
     json_end = output.rfind('}')
-    vlm_plan = json.loads(output[json_start:json_end + 1])
+    try:
+        vlm_plan = json.loads(output[json_start:json_end + 1])
+    except json.decoder.JSONDecodeError:
+        print(f'Could not parse JSON output: \n{output}')
+        print('Tried parsing:\n', output[json_start:json_end + 1])
+        raise
     return vlm_plan
 
 

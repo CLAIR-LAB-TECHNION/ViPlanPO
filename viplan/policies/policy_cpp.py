@@ -170,7 +170,7 @@ class PolicyCPP(Policy):
         )
 
         # update the factored belief based on VLM outputs
-        self._update_belief(vlm_prob_ground)
+        self._update_belief(vlm_prob_ground, log_plan_extra)
 
         # check causes for replanning
         replan = False
@@ -312,12 +312,13 @@ class PolicyCPP(Policy):
         self.task_logger.info(
             "New conformant plan",
             extra=log_plan_extra | {
-                "selected_states": selected_states
+                "selected_states": selected_states,
+                "n_states": len(self.belief_set)
             }
         )
         
     
-    def _update_belief(self, fluent_probs: Dict[FNode, Optional[float]]) -> None:
+    def _update_belief(self, fluent_probs: Dict[FNode, Optional[float]], log_extra: Dict[str, Any]) -> None:
         for fluent, prob in fluent_probs.items():
             if prob is None:
                 continue  # no info about this fluent
@@ -331,6 +332,9 @@ class PolicyCPP(Policy):
             )
             
             self.factored_belief[fluent] = float(expit(updated_logit))
+        self.task_logger.info('Belief updated', log_extra | {
+            str(fluent): self.factored_belief[fluent] for fluent in self.factored_belief.keys()
+        })
 
     def _belief_step(self, action: ActionInstance) -> None:
         new_belief_set = []
