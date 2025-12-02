@@ -311,7 +311,7 @@ class PolicyCPP(Policy):
         for state in self.belief_set:
             # create a UPState object from the state dict
             up_state = state_dict_to_up_state(
-                self._sim.problem,
+                self._sim._problem,
                 {
                     str(fluent): v
                     for fluent, v in state.items()
@@ -319,7 +319,7 @@ class PolicyCPP(Policy):
             )
                 
             # step the simulator to get the next state
-            next_state = self._sim.get_next_state(up_state, action)
+            next_state = self._sim.apply(up_state, action)
 
             # convert the UPState back to a dict representation
             next_state_dict = {
@@ -345,7 +345,7 @@ class PolicyCPP(Policy):
         for state in self.belief_set:
             # create a UPState object from the state dict
             up_state = state_dict_to_up_state(
-                self._sim.problem,
+                self._sim._problem,
                 {
                     str(fluent): v
                     for fluent, v in state.items()
@@ -353,7 +353,7 @@ class PolicyCPP(Policy):
             )
 
             # check action applicability            
-            if not self._sim.is_action_applicable(up_state, action):
+            if not self._sim.is_applicable(up_state, action):
                 # action not applicable in this state
                 return False
         
