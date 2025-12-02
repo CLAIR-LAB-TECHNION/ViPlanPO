@@ -393,8 +393,10 @@ class PolicyCPP(Policy):
             # determine fluent probability based on token probabilities
             if unknown_prob >= max(yes_prob, no_prob):
                 fluent_probs[fluent] = None  # no info
-            else:
+            elif yes_prob + no_prob > 0.0:
                 fluent_probs[fluent] = yes_prob / (yes_prob + no_prob)  # normalized yes prob
+            else:
+                fluent_probs[fluent] = None  # no info
         
         return fluent_probs
 
