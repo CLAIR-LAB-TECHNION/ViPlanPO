@@ -67,7 +67,8 @@ class OpenAIVQA:
 
         # normalize each group vs all groups
         return [
-            prob / np.sum(token_groups_probs, axis=0) for prob in token_groups_probs
+            # clamp to [0, 1] to avoid numerical issues
+            np.clip(prob / np.sum(token_groups_probs, axis=0), 0, 1) for prob in token_groups_probs
         ]
 
     def estimation_query(
