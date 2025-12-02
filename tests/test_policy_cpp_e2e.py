@@ -7,6 +7,8 @@ if str(ROOT_DIR) not in sys.path:
     sys.path.append(str(ROOT_DIR))
 
 import pytest
+
+pytest.importorskip("PIL", reason="Pillow is required for PolicyCPP e2e test")
 from PIL import Image
 from unified_planning.exceptions import (
     UPNoRequestedEngineAvailableException,
@@ -31,11 +33,12 @@ class DummyVQA:
 
 def test_policy_cpp_end_to_end(monkeypatch):
     predicate_language = {
-        "on": "Is {0} on {1}?",
-        "inColumn": "Is {0} in column {1}?",
-        "clear": "Is {0} clear?",
-        "rightOf": "Is column {0} right of {1}?",
-        "leftOf": "Is column {0} left of {1}?",
+        "reachable": "Is {0} reachable by the agent?",
+        "holding": "Is the agent holding {0}?",
+        "open": "Is {0} open?",
+        "ontop": "Is {0} on top of {1}?",
+        "inside": "Is {0} inside {1}?",
+        "nextto": "Is {0} next to {1}?",
     }
 
     monkeypatch.setattr(
@@ -51,8 +54,8 @@ def test_policy_cpp_end_to_end(monkeypatch):
     logger = logging.getLogger("policy_cpp_e2e")
     logger.addHandler(logging.NullHandler())
 
-    domain_path = Path("data/planning/blocksworld/domain.pddl")
-    problem_path = Path("data/planning/blocksworld/test_problem.pddl")
+    domain_path = Path("data/planning/igibson/domain.pddl")
+    problem_path = Path("data/planning/igibson/simple/locking_every_door_simple.pddl")
 
     # Avoid external API calls by swapping in a lightweight VQA stub while
     # keeping all other components real.
