@@ -7,6 +7,7 @@
 # conda install -c conda-forge mono
 
 import os
+import random
 from typing import Any, Dict, List, Optional
 from logging import Logger
 
@@ -182,8 +183,19 @@ class PolicyCPP(Policy):
             )
 
         if self.current_plan is None:
-           #TODO random exploratory action?
-           return None  # no plan found
+            self.task_logger.info(
+                "No plan. Exploring", extra=log_plan_extra
+            )
+            exploratory_action = self._sample_random_exploratory_action()
+            if exploratory_action is None:
+                return None  # no plan found
+
+            self._prev_action = exploratory_action
+            return PolicyAction(
+                name=exploratory_action.action.name,
+                parameters=list(map(str, exploratory_action.actual_parameters)),
+                raw_response=["exploratory"],
+            )
 
         # get the next action from the current plan
         next_action = self.current_plan.pop(0)
@@ -261,6 +273,7 @@ class PolicyCPP(Policy):
             # and save plan
             self.belief_set.append(state)
             self.current_plan = extract_conformant_plan(plan_res.plan.root_node)
+            log_plan_extra['has_plan'] = self.current_plan is not None
 
             # check if we reached the conformant probability threshold
             total_prob += prob
@@ -396,9 +409,73 @@ class PolicyCPP(Policy):
             elif yes_prob + no_prob > 0.0:
                 fluent_probs[fluent] = yes_prob / (yes_prob + no_prob)  # normalized yes prob
             else:
-                fluent_probs[fluent] = None  # no info
-        
+                fluent_probs[fluent] = yes_prob / (yes_prob + no_prob)  # normalized yes prob
+
         return fluent_probs
+
+    def _sample_random_exploratory_action(self) -> Optional[ActionInstance]:
+        """Sample a random action that is biased toward achieving the goal."""
+
+        problem = self._sim._problem
+        if not problem.actions:
+            return None
+
+        goal_fluent_names = set()
+        goal_objects = set()
+
+        for goal in problem.goals:
+            try:
+                if goal.is_fluent_exp():
+                    fluent = goal.fluent()
+                    goal_fluent_names.add(fluent.name)
+                    goal_objects.update(map(str, fluent.args))
+                goal_objects.update(map(str, goal.args))
+            except Exception:
+                continue
+
+        def is_relevant(action) -> bool:
+            for effect in getattr(action, "effects", []):
+                try:
+                    effect_fluent = effect.fluent
+                    effect_symbol = effect_fluent.fluent()
+                    if effect_symbol.name in goal_fluent_names:
+                        return True
+                    if any(str(arg) in goal_objects for arg in effect_fluent.args):
+                        return True
+                except Exception:
+                    continue
+
+            for param in action.parameters:
+                objects_of_type = list(problem.objects(param.type))
+                if any(str(obj) in goal_objects for obj in objects_of_type):
+                    return True
+
+            return False
+
+        candidate_actions = [a for a in problem.actions if is_relevant(a)]
+        if not candidate_actions:
+            candidate_actions = list(problem.actions)
+
+        tried_actions = set()
+        while len(tried_actions) < len(candidate_actions):
+            action = random.choice(candidate_actions)
+            tried_actions.add(id(action))
+
+            try:
+                parameters = [
+                    random.choice(list(problem.objects(param.type)))
+                    for param in action.parameters
+                ]
+            except IndexError:
+                # Action cannot be grounded due to missing objects of a given type.
+                continue
+
+            try:
+                return action(*parameters)
+            except Exception:
+                continue
+
+        return None
 
     def __del__(self):
         self.planner.destroy()

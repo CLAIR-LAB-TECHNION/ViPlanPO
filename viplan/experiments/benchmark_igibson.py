@@ -141,7 +141,7 @@ def planning_loop(
             logger.error(f"Could not parse VLM output: {e}")
             policy_error = 'Could not parse VLM output'
         except Exception as exc:
-            logger.exception(f"Policy failed to return an action")
+            logger.error(f"Policy failed to return an action: {exc}", stack_info=True)
             policy_error = 'Policy failed to return an action'
 
         if policy_action is None:
