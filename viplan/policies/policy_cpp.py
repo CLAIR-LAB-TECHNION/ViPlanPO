@@ -31,7 +31,7 @@ from .up_utils import (
     create_up_problem,
     get_mapping_from_compiled_actions_to_original_actions,
     get_all_grounded_predicates_for_objects,
-    state_dict_to_up_state,
+    convert_state_dict_to_up_compatible,
     find_goal_relevant_fluents,
 )
 from ..models.custom_vqa.openai import OpenAIVQA, OPENAI_MODEL_ID_PREFIX
@@ -330,15 +330,17 @@ class PolicyCPP(Policy):
 
     def _belief_step(self, action: ActionInstance) -> None:
         new_belief_set = []
+        up_state = self._sim.get_initial_state()
         for state in self.belief_set:
             # create a UPState object from the state dict
-            up_state = state_dict_to_up_state(
+            state_dict = convert_state_dict_to_up_compatible(
                 self._sim._problem,
                 {
                     str(fluent): v
                     for fluent, v in state.items()
                 }
             )
+            up_state = up_state.make_child(state_dict)
                 
             # step the simulator to get the next state
             next_state = self._sim.apply(up_state, action)
