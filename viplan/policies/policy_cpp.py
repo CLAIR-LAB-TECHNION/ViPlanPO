@@ -251,7 +251,7 @@ class PolicyCPP(Policy):
 
             if all(not value for value in state.values()):
                 # Temporary hack until we implement constraints.
-                state = {fluent: True for fluent in state}
+                state[state.keys().__iter__().__next__()] = True
 
             # set initial state constraints in the contingent problem
             # based on all states selected so far.
