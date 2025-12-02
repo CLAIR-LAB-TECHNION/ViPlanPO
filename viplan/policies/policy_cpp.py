@@ -8,7 +8,7 @@
 
 import os
 import random
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 from logging import Logger
 
 from PIL.Image import Image
@@ -186,7 +186,7 @@ class PolicyCPP(Policy):
             self.task_logger.info(
                 "No plan. Exploring", extra=log_plan_extra
             )
-            exploratory_action = self._sample_random_exploratory_action()
+            exploratory_action = self._sample_random_exploratory_action(observation)
             if exploratory_action is None:
                 return None  # no plan found
 
@@ -413,8 +413,13 @@ class PolicyCPP(Policy):
 
         return fluent_probs
 
-    def _sample_random_exploratory_action(self) -> Optional[ActionInstance]:
-        """Sample a random action that is biased toward achieving the goal."""
+    def _sample_random_exploratory_action(self, observation: PolicyObservation) -> Optional[ActionInstance]:
+        """Sample a random action that is biased toward achieving the goal.
+
+        The sampling strategy prioritises actions on objects that have not been
+        tried before, or that were last tried the longest time ago, based on the
+        chronological ``observation.previous_actions`` list.
+        """
 
         problem = self._sim._problem
         if not problem.actions:
@@ -456,16 +461,45 @@ class PolicyCPP(Policy):
         if not candidate_actions:
             candidate_actions = list(problem.actions)
 
+        # Build a recency map for (action, object) pairs based on previous actions.
+        # The index counts how many steps ago the object was used for the action;
+        # higher values mean less recent. Objects never seen receive ``inf``.
+        recency_map: Dict[Tuple[str, str], int] = {}
+        for idx, prev_action in enumerate(reversed(list(observation.previous_actions))):
+            action_name = prev_action.get("action")
+            parameters = prev_action.get("parameters", [])
+            if not action_name:
+                continue
+
+            for obj in parameters:
+                key = (action_name, str(obj))
+                if key not in recency_map:
+                    recency_map[key] = idx
+
         tried_actions = set()
         while len(tried_actions) < len(candidate_actions):
             action = random.choice(candidate_actions)
             tried_actions.add(id(action))
 
             try:
-                parameters = [
-                    random.choice(list(problem.objects(param.type)))
-                    for param in action.parameters
-                ]
+                parameters = []
+                for param in action.parameters:
+                    objects_of_type = list(problem.objects(param.type))
+                    if not objects_of_type:
+                        raise IndexError
+
+                    # Select the object that is least recently used for this action
+                    # (or never used), breaking ties randomly.
+                    scored_objects = []
+                    for obj in objects_of_type:
+                        key = (action.name, str(obj))
+                        recency = recency_map.get(key)
+                        score = float("inf") if recency is None else recency
+                        scored_objects.append((score, obj))
+
+                    max_score = max(score for score, _ in scored_objects)
+                    best_candidates = [obj for score, obj in scored_objects if score == max_score]
+                    parameters.append(random.choice(best_candidates))
             except IndexError:
                 # Action cannot be grounded due to missing objects of a given type.
                 continue
