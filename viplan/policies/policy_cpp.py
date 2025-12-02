@@ -27,6 +27,7 @@ from .cpp_utils import (
     extract_conformant_plan
 )
 from .policy_interface import Policy, PolicyObservation, PolicyAction
+from .policy_vila import DefaultVILAPolicy
 from .up_utils import (
     create_up_problem,
     get_mapping_from_compiled_actions_to_original_actions,
@@ -50,6 +51,7 @@ class PolicyCPP(Policy):
         use_unknown_token: bool = True,
         use_fd_constraints: bool = False,
         planner_timeout: Optional[float] = None,
+        vila_policy: Optional[DefaultVILAPolicy] = None,
         **vlm_inference_kwargs: Dict[str, Any]
     ):
         super().__init__(predicate_language)
@@ -133,6 +135,18 @@ class PolicyCPP(Policy):
         self.vlm_inference_kwargs = vlm_inference_kwargs
         self.task_logger = tasks_logger
 
+        if vila_policy is not None:
+            self.vila_policy = vila_policy
+        elif hasattr(self.vlm_model, "generate"):
+            self.vila_policy = DefaultVILAPolicy(
+                model=self.vlm_model,
+                base_prompt=base_prompt,
+                logger=tasks_logger,
+                predicate_language=predicate_language,
+            )
+        else:
+            self.vila_policy = None
+
     def next_action(self, observation: PolicyObservation, log_extra: Dict[str, Any]) -> PolicyAction:
         # if the previous action was executed, step action in belief space
         if log_extra is None:
@@ -186,16 +200,12 @@ class PolicyCPP(Policy):
             self.task_logger.info(
                 "No plan. Exploring", extra=log_plan_extra
             )
-            exploratory_action = self._sample_random_exploratory_action()
-            if exploratory_action is None:
+            if self.vila_policy is None:
                 return None  # no plan found
 
-            self._prev_action = exploratory_action
-            return PolicyAction(
-                name=exploratory_action.action.name,
-                parameters=list(map(str, exploratory_action.actual_parameters)),
-                raw_response=["exploratory"],
-            )
+            vila_action = self.vila_policy.next_action(observation, log_extra)
+            self._prev_action = self._policy_action_to_action_instance(vila_action)
+            return vila_action
 
         # get the next action from the current plan
         next_action = self.current_plan.pop(0)
@@ -476,6 +486,38 @@ class PolicyCPP(Policy):
                 continue
 
         return None
+
+    def _policy_action_to_action_instance(
+        self, policy_action: Optional[PolicyAction]
+    ) -> Optional[ActionInstance]:
+        if policy_action is None:
+            return None
+
+        try:
+            action_template = self._sim._problem.action(policy_action.name)
+        except Exception:
+            return None
+
+        parameters = []
+        try:
+            for param_def, param_value in zip(
+                action_template.parameters, policy_action.parameters
+            ):
+                param = next(
+                    (
+                        obj
+                        for obj in self._sim._problem.objects(param_def.type)
+                        if str(obj) == str(param_value)
+                    ),
+                    None,
+                )
+                if param is None:
+                    return None
+                parameters.append(param)
+
+            return action_template(*parameters)
+        except Exception:
+            return None
 
     def __del__(self):
         self.planner.destroy()

@@ -1,6 +1,7 @@
+import json
 import logging
-from pathlib import Path
 import sys
+from pathlib import Path
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
 if str(ROOT_DIR) not in sys.path:
@@ -18,6 +19,7 @@ from unified_planning import environment as up_environment
 from unified_planning import shortcuts as up_shortcuts
 
 from viplan.policies.policy_cpp import PolicyCPP
+from viplan.policies.policy_vila import DefaultVILAPolicy as DummyVILAPolicy
 from viplan.policies.policy_interface import PolicyAction, PolicyObservation
 from viplan.policies.up_utils import create_up_problem
 
@@ -29,6 +31,20 @@ class DummyVQA:
     def __call__(self, images, query_batch, *token_groups_of_interest):
         # Return a simple distribution favouring "yes" for every query.
         return [[0.7, 0.2, 0.1] for _ in query_batch]
+
+
+class DummyVILAModel:
+    def __init__(self, problem):
+        self.problem = problem
+
+    def generate(self, prompts, images, return_probs=False):
+        action_template = self.problem.actions[0]
+        parameters = [
+            str(next(iter(self.problem.objects(param.type))))
+            for param in action_template.parameters
+        ]
+        plan = {"plan": [{"action": action_template.name, "parameters": parameters}]}
+        return [json.dumps(plan) for _ in prompts]
 
 
 def test_policy_cpp_end_to_end(monkeypatch):
@@ -62,6 +78,8 @@ def test_policy_cpp_end_to_end(monkeypatch):
     monkeypatch.setenv("OPENAI_API_KEY", "test-key")
     monkeypatch.setattr("viplan.policies.policy_cpp.OpenAIVQA", DummyVQA)
 
+    problem = create_up_problem(str(domain_path), str(problem_path))
+
     try:
         policy = PolicyCPP(
             predicate_language=predicate_language,
@@ -70,6 +88,12 @@ def test_policy_cpp_end_to_end(monkeypatch):
             model_name="gpt-test",
             base_prompt="Answer yes or no.",
             tasks_logger=logger,
+            vila_policy=DummyVILAPolicy(
+                model=DummyVILAModel(problem),
+                base_prompt="Answer yes or no.",
+                predicate_language=predicate_language,
+                logger=logger,
+            ),
         )
     except (
         RuntimeError,
@@ -81,7 +105,7 @@ def test_policy_cpp_end_to_end(monkeypatch):
     observation_image = Image.new("RGB", (640, 480), color=(255, 255, 255))
     observation = PolicyObservation(
         image=observation_image,
-        problem=create_up_problem(str(domain_path), str(problem_path)),
+        problem=problem,
         predicate_language=predicate_language,
         previous_actions=[],
     )
