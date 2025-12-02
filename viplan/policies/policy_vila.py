@@ -5,7 +5,7 @@ from viplan.code_helpers import get_logger
 from viplan.policies.policy_interface import Policy, PolicyAction, PolicyObservation
 
 preds_templates = {
-    'reachable': "the {0} is reachable by the agent",
+    'reachable': "the {0} is within reach by the agent",
     'holding':   "the agent is holding the {0}",
     'open':      "the {0} is open",
     'ontop':     "the {0} is on top of the {1}",
