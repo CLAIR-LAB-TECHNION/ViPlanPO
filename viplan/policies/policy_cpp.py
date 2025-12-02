@@ -366,15 +366,17 @@ class PolicyCPP(Policy):
         self.belief_set = merged_belief_set
     
     def _is_safe_action(self, action: ActionInstance) -> bool:
+        up_state = self._sim.get_initial_state()
         for state in self.belief_set:
             # create a UPState object from the state dict
-            up_state = state_dict_to_up_state(
+            state_dict = convert_state_dict_to_up_compatible(
                 self._sim._problem,
                 {
                     str(fluent): v
                     for fluent, v in state.items()
                 }
             )
+            up_state = up_state.make_child(state_dict)
 
             # check action applicability            
             if not self._sim.is_applicable(up_state, action):
