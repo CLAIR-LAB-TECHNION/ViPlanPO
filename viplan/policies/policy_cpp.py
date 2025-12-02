@@ -263,10 +263,17 @@ class PolicyCPP(Policy):
             )
 
             # try to find a conformant plan for the current belief set
-            plan_res = self.planner.solve(
-                self.contingent_problem,
-                timeout=self.planner_timeout
-            )
+            try:
+                plan_res = self.planner.solve(
+                    self.contingent_problem,
+                    timeout=self.planner_timeout
+                )
+            except Exception as e:
+                self.task_logger.error(
+                    "Error during planning",
+                    extra=log_plan_extra | {"exception": str(e)}
+                )
+                break  # planning failed
 
             if plan_res.status != PlanGenerationResultStatus.SOLVED_SATISFICING:
                 break  # no plan found for this belief set
