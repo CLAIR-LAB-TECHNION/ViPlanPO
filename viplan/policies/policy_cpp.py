@@ -414,94 +414,56 @@ class PolicyCPP(Policy):
         return fluent_probs
 
     def _sample_random_exploratory_action(self, observation: PolicyObservation) -> Optional[ActionInstance]:
-        """Sample a random action that is biased toward achieving the goal.
+        """Sample a random action that has not been attempted before.
 
-        The sampling strategy prioritises actions on objects that have not been
-        tried before, or that were last tried the longest time ago, based on the
-        chronological ``observation.previous_actions`` list.
+        The previous actions are listed in ``observation.previous_actions``.
+        Any action instantiation already present there is skipped in favour of
+        a new random combination of an action and its parameters.
         """
 
         problem = self._sim._problem
-        if not problem.actions:
+        available_actions = list(problem.actions)
+
+        if not available_actions:
             return None
 
-        goal_fluent_names = set()
-        goal_objects = set()
-
-        for goal in problem.goals:
-            try:
-                if goal.is_fluent_exp():
-                    fluent = goal.fluent()
-                    goal_fluent_names.add(fluent.name)
-                    goal_objects.update(map(str, fluent.args))
-                goal_objects.update(map(str, goal.args))
-            except Exception:
+        attempted_keys = set()
+        for prev_action in observation.previous_actions:
+            name = prev_action.get("action")
+            if not name:
                 continue
 
-        def is_relevant(action) -> bool:
-            for effect in getattr(action, "effects", []):
+            raw_params = prev_action.get("parameters")
+            if isinstance(raw_params, dict):
+                key_params = tuple(sorted((str(k), str(v)) for k, v in raw_params.items()))
+            elif raw_params is None:
+                key_params = None
+            else:
                 try:
-                    effect_fluent = effect.fluent
-                    effect_symbol = effect_fluent.fluent()
-                    if effect_symbol.name in goal_fluent_names:
-                        return True
-                    if any(str(arg) in goal_objects for arg in effect_fluent.args):
-                        return True
+                    key_params = tuple(map(str, raw_params))
                 except Exception:
-                    continue
+                    key_params = None
 
-            for param in action.parameters:
-                objects_of_type = list(problem.objects(param.type))
-                if any(str(obj) in goal_objects for obj in objects_of_type):
-                    return True
+            attempted_keys.add((str(name), key_params))
 
-            return False
+        random.shuffle(available_actions)
+        max_attempts = max(1, len(available_actions) * 5)
 
-        candidate_actions = [a for a in problem.actions if is_relevant(a)]
-        if not candidate_actions:
-            candidate_actions = list(problem.actions)
-
-        # Build a recency map for (action, object) pairs based on previous actions.
-        # The index counts how many steps ago the object was used for the action;
-        # higher values mean less recent. Objects never seen receive ``inf``.
-        recency_map: Dict[Tuple[str, str], int] = {}
-        for idx, prev_action in enumerate(reversed(list(observation.previous_actions))):
-            action_name = prev_action.get("action")
-            parameters = prev_action.get("parameters", [])
-            if not action_name:
-                continue
-
-            for obj in parameters:
-                key = (action_name, str(obj))
-                if key not in recency_map:
-                    recency_map[key] = idx
-
-        tried_actions = set()
-        while len(tried_actions) < len(candidate_actions):
-            action = random.choice(candidate_actions)
-            tried_actions.add(id(action))
+        for _ in range(max_attempts):
+            action = random.choice(available_actions)
+            parameters: List[Any] = []
 
             try:
-                parameters = []
                 for param in action.parameters:
                     objects_of_type = list(problem.objects(param.type))
                     if not objects_of_type:
                         raise IndexError
-
-                    # Select the object that is least recently used for this action
-                    # (or never used), breaking ties randomly.
-                    scored_objects = []
-                    for obj in objects_of_type:
-                        key = (action.name, str(obj))
-                        recency = recency_map.get(key)
-                        score = float("inf") if recency is None else recency
-                        scored_objects.append((score, obj))
-
-                    max_score = max(score for score, _ in scored_objects)
-                    best_candidates = [obj for score, obj in scored_objects if score == max_score]
-                    parameters.append(random.choice(best_candidates))
+                    parameters.append(random.choice(objects_of_type))
             except IndexError:
-                # Action cannot be grounded due to missing objects of a given type.
+                continue
+
+            key = (action.name, tuple(map(str, parameters)))
+            if key in attempted_keys:
                 continue
 
             try:
