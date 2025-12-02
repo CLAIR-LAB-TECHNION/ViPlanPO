@@ -174,19 +174,23 @@ class PolicyCPP(Policy):
 
         # check causes for replanning
         replan = False
+        replan_reason = ""
         if self.current_plan is None:  # does plan exist?
             replan = True
+            replan_reason += "no current plan; "
         else:
             # check if the probability of the current belief set
             # still meets the conformant probability threshold
             total_belief_prob = self._get_current_belief_set_probability()
             if total_belief_prob < self.conformant_prob:
                 replan = True
+                replan_reason += "belief probability below threshold; "
 
             # check if next action is safe
             next_action = self.action_mapping(self.current_plan[0])
             if not self._is_safe_action(next_action):
                 replan = True
+                replan_reason += "next action not safe; "
 
         log_plan_extra['replan'] = replan
         if replan:
@@ -194,7 +198,7 @@ class PolicyCPP(Policy):
             self._set_belief_set_and_plan(log_plan_extra)
             
             self.task_logger.info(
-                "Replanning executed.", extra=log_plan_extra
+                "Replanning executed.", extra=log_plan_extra | {"replan_reason": replan_reason}
             )
 
         if self.current_plan is None:
