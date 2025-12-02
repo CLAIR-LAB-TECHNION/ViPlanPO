@@ -183,6 +183,9 @@ class PolicyCPP(Policy):
             )
 
         if self.current_plan is None:
+            self.task_logger.info(
+                "No plan. Exploring", extra=log_plan_extra
+            )
             exploratory_action = self._sample_random_exploratory_action()
             if exploratory_action is None:
                 return None  # no plan found
@@ -270,6 +273,7 @@ class PolicyCPP(Policy):
             # and save plan
             self.belief_set.append(state)
             self.current_plan = extract_conformant_plan(plan_res.plan.root_node)
+            log_plan_extra['has_plan'] = self.current_plan is not None
 
             # check if we reached the conformant probability threshold
             total_prob += prob
@@ -412,7 +416,7 @@ class PolicyCPP(Policy):
     def _sample_random_exploratory_action(self) -> Optional[ActionInstance]:
         """Sample a random action that is biased toward achieving the goal."""
 
-        problem = self._sim.problem
+        problem = self._sim._problem
         if not problem.actions:
             return None
 
