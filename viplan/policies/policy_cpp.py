@@ -31,7 +31,8 @@ from .up_utils import (
     create_up_problem,
     get_mapping_from_compiled_actions_to_original_actions,
     get_all_grounded_predicates_for_objects,
-    state_dict_to_up_state
+    state_dict_to_up_state,
+    find_goal_relevant_fluents,
 )
 from ..models.custom_vqa.openai import OpenAIVQA, OPENAI_MODEL_ID_PREFIX
 
@@ -48,7 +49,7 @@ class PolicyCPP(Policy):
         conformant_prob: float = 0.8,
         belief_update_weight: float = 0.5,
         use_unknown_token: bool = True,
-        use_fd_constraints: bool = False,
+        use_fd_constraints: bool = True,
         planner_timeout: Optional[float] = None,
         **vlm_inference_kwargs: Dict[str, Any]
     ):
@@ -73,7 +74,12 @@ class PolicyCPP(Policy):
 
         # initialize the belief with total uncertainty over all fluents.
         # represented with maximum entropy (0.5 probability for each fluent).
-        self.all_fluents = get_all_grounded_predicates_for_objects(orig_problem)
+        if self.use_fd_constraints:
+            self.all_fluents = find_goal_relevant_fluents(
+                orig_problem
+            )
+        else:
+            self.all_fluents = get_all_grounded_predicates_for_objects(orig_problem)
         self.factored_belief: Dict[Any, float] = {
             fluent: 0.5
             for fluent in self.all_fluents
@@ -404,12 +410,11 @@ class PolicyCPP(Policy):
                 unknown_prob = 0.0    
 
             # determine fluent probability based on token probabilities
-            if unknown_prob >= max(yes_prob, no_prob):
+            if unknown_prob >= max(yes_prob, no_prob) or (yes_prob + no_prob == 0.0):
                 fluent_probs[fluent] = None  # no info
-            elif yes_prob + no_prob > 0.0:
-                fluent_probs[fluent] = yes_prob / (yes_prob + no_prob)  # normalized yes prob
             else:
-                fluent_probs[fluent] = yes_prob / (yes_prob + no_prob)  # normalized yes prob
+                # normalized yes probability
+                fluent_probs[fluent] = float(yes_prob / (yes_prob + no_prob))
 
         return fluent_probs
 
