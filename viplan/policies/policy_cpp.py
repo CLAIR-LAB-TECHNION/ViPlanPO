@@ -357,7 +357,7 @@ class PolicyCPP(Policy):
         merged_belief_set = []
         seen_states = set()
         for state in new_belief_set:
-            state_tuple = tuple(sorted(state.items()))
+            state_tuple = tuple(state.items())
             if state_tuple not in seen_states:
                 seen_states.add(state_tuple)
                 merged_belief_set.append(state)
