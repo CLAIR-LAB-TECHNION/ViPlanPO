@@ -1,4 +1,6 @@
 import os
+import traceback
+
 import fire
 import json
 import copy
@@ -138,10 +140,10 @@ def planning_loop(
             start_time = time.time()
             policy_action = policy.next_action(observation, log_action_extra)
         except json.JSONDecodeError as e:
+            traceback.print_exc()
             logger.error(f"Could not parse VLM output: {e}")
             policy_error = 'Could not parse VLM output'
         except Exception as exc:
-            import traceback
             traceback.print_exc()
             logger.error(f"Policy failed to return an action: {exc}", stack_info=True)
             policy_error = 'Policy failed to return an action'

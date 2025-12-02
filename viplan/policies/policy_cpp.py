@@ -140,12 +140,13 @@ class PolicyCPP(Policy):
         self.base_prompt = base_prompt
         self.vlm_inference_kwargs = vlm_inference_kwargs
         self.task_logger = tasks_logger
-        self.fallback_vila_policy = DefaultVILAPolicy(
-            model=model,
-            base_prompt=base_prompt,
-            logger=self.task_logger,
-            predicate_language=predicate_language,
-        )
+        with open('data/prompts/planning/vila_igibson_json.md', 'r') as f:
+            self.fallback_vila_policy = DefaultVILAPolicy(
+                model=model,
+                base_prompt=f.read(),
+                logger=self.task_logger,
+                predicate_language=predicate_language,
+            )
 
     def next_action(self, observation: PolicyObservation, log_extra: Dict[str, Any]) -> PolicyAction:
         # if the previous action was executed, step action in belief space
@@ -298,6 +299,8 @@ class PolicyCPP(Policy):
                 "No conformant plan found for the current belief.",
                 extra=log_plan_extra
             )
+        else:
+            log_plan_extra['plan'] = list(map(str, self.current_plan))
 
         selected_states = [
             {
@@ -307,7 +310,7 @@ class PolicyCPP(Policy):
             for state in self.belief_set
         ]
         self.task_logger.info(
-            "New belief set",
+            "New conformant plan",
             extra=log_plan_extra | {
                 "selected_states": selected_states
             }
