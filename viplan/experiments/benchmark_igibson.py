@@ -1,4 +1,6 @@
 import os
+import traceback
+
 import fire
 import json
 import copy
@@ -26,6 +28,7 @@ from viplan.policies.policy_interface import (
 
 from viplan.policies.policy_plan import DefaultPlanningPolicy
 from viplan.policies.policy_vila import DefaultVILAPolicy, preds_templates
+from viplan.policies.policy_cpp import PolicyCPP
 
 goal_templates = {
     'reachable': {
@@ -135,12 +138,14 @@ def planning_loop(
         policy_error = 'unknown'
         try:
             start_time = time.time()
-            policy_action = policy.next_action(observation)
+            policy_action = policy.next_action(observation, log_action_extra)
         except json.JSONDecodeError as e:
+            traceback.print_exc()
             logger.error(f"Could not parse VLM output: {e}")
             policy_error = 'Could not parse VLM output'
         except Exception as exc:
-            logger.error(f"Policy failed to return an action: {exc}")
+            traceback.print_exc()
+            logger.error(f"Policy failed to return an action: {exc}", stack_info=True)
             policy_error = 'Policy failed to return an action'
 
         if policy_action is None:
@@ -275,7 +280,7 @@ def main(
     hf_cache_dir: os.PathLike = None,
     log_level = 'info',
     max_steps: int = 10,
-    policy_cls: str = 'DefaultVILAPolicy',
+    policy_cls: str = 'PolicyCPP',
     use_predicate_groundings: bool = True,
     **kwargs):
     
@@ -323,22 +328,6 @@ def main(
             logger.info(f"Goal: {goal_string}")
             problem_prompt = base_prompt.replace("{goal_string}", goal_string)
 
-            if issubclass(PolicyCls, DefaultPlanningPolicy):
-                action_queue = deque()
-                policy = PolicyCls(
-                    action_queue=action_queue,
-                    predicate_language=preds_templates,
-                    logger=logger,
-                )
-            else:
-                policy = PolicyCls(
-                    model=model,
-                    base_prompt=problem_prompt,
-                    predicate_language=preds_templates,
-                    logger=logger,
-                    problem=problem,
-                )
-
             img_output_dir = get_img_output_dir('vila', instance_id, scene_id, task)
 
             log_extra = {
@@ -351,6 +340,26 @@ def main(
                 'model': model_name,
                 'img_output_dir': img_output_dir,
             }
+
+            if issubclass(PolicyCls, DefaultPlanningPolicy):
+                action_queue = deque()
+                policy = PolicyCls(
+                    action_queue=action_queue,
+                    predicate_language=preds_templates,
+                    logger=logger,
+                )
+            else:
+                policy = PolicyCls(
+                    predicate_language=preds_templates,
+                    domain_file=domain_file,
+                    problem_file=problem_file,
+                    model=model,
+                    model_name=model_name,
+                    base_prompt=problem_prompt,
+                    tasks_logger=tasks_logger,
+                    logger=logger,
+                    problem=problem,
+                )
 
             # Run planning loop
             logger.info("Starting planning loop...")

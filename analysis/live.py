@@ -111,7 +111,7 @@ def build_stats_lines(df: pd.DataFrame) -> List[str]:
     return lines
 
 
-def monitor_logs(results_dir: Path, poll_interval: float = 2.0, stale_seconds: float = 60.0) -> None:
+def monitor_logs(results_dir: Path, poll_interval: float = 10.0, stale_seconds: float = 60.0) -> None:
     current_file: Path | None = None
     handle = None
     position = 0
@@ -137,7 +137,7 @@ def monitor_logs(results_dir: Path, poll_interval: float = 2.0, stale_seconds: f
         if new_records:
             buffer.extend(new_records)
             df = pd.DataFrame(buffer)
-            _render(build_stats_lines(df))
+            _render(build_stats_lines(df) + [f"\nWatching log file:\n  {current_file.relative_to(results_dir)}"])
         else:
             file_age = time.time() - current_file.stat().st_mtime
             if file_age > stale_seconds:
