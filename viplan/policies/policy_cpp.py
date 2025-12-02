@@ -237,6 +237,10 @@ class PolicyCPP(Policy):
                 for i, fluent in enumerate(self.all_fluents)
             }
 
+            if all(not value for value in state.values()):
+                # Temporary hack until we implement constraints.
+                state = {fluent: True for fluent in state}
+
             # set initial state constraints in the contingent problem
             # based on all states selected so far.
             set_cp_initial_state_constraints_from_belief(
