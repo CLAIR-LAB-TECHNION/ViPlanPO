@@ -4,12 +4,24 @@ This module provides utilities for handling PDDL (Planning Domain Definition Lan
 problems, including state management, object handling, and data collection.
 """
 
-import re
+import os
 from itertools import product
-from typing import Dict, Iterable, List, Optional, Sequence, Tuple, Callable
+import subprocess
+import sys
+from typing import Dict, Iterable, List, Optional, Sequence, Set, Tuple, Callable
 
 from unified_planning.io import PDDLReader, PDDLWriter
-from unified_planning.shortcuts import Problem, UPState, FNode, Not, Action
+from unified_planning.shortcuts import (
+    Problem,
+    UPState,
+    FNode,
+    Not,
+    Action,
+    InstantaneousAction,
+    Fluent,
+    Compiler,
+    CompilationKind
+)
 from unified_planning.engines.sequential_simulator import UPSequentialSimulator
 from unified_planning.plans.plan import ActionInstance
 
@@ -294,3 +306,269 @@ def get_mapping_from_compiled_actions_to_original_actions(
         return ActionInstance(original_action, params_original_problem)
     
     return map_compiled_action_to_original_action
+
+
+def find_goal_relevant_fluents(problem: Problem) -> Set[FNode]:
+    """
+    Compute a set of (ground) fluent applications (atoms) that are backward-relevant
+    to achieving the goals of the given unified_planning Problem.
+
+    Result elements are FNodes of the form fluent(obj1, obj2, ...),
+    e.g., at(r1, l2).
+
+    Algorithm (backward-ish relevance):
+    1. Start from atoms that appear in the goals.
+    2. Repeatedly:
+       - Mark an action as relevant if **any** fluent symbol occurring in:
+         * its preconditions,
+         * its (durative) conditions,
+         * its effect targets,
+         * its effect conditions,
+         * its effect values
+         is already relevant.
+       - For each such relevant action, add all atoms that appear in all of
+         those places (preconditions, conditions, effect targets, effect
+         conditions, effect values).
+    3. Stop when a fixpoint is reached (no new atoms added).
+
+    This ensures that *preconditions* and *effect conditions* can make an
+    action relevant, not only its effect targets.
+    """
+    # start by grounding the problem so that we only get grounded atoms
+    with Compiler(problem_kind=problem.kind,
+            compilation_kind=CompilationKind.QUANTIFIERS_REMOVING) as compiler:
+        problem = compiler.compile(problem,
+                                CompilationKind.QUANTIFIERS_REMOVING).problem
+    # ground using fd
+    with Compiler(name="fast-downward-grounder") as compiler:
+        problem = compiler.compile(
+            problem,
+        ).problem
+
+    env = problem.environment
+    fve = env.free_vars_extractor  # extracts fluent applications from expressions
+
+    # --- helpers -------------------------------------------------------------
+
+    def add_atoms_from_expressions(target_atoms: Set[FNode],
+                                   target_symbols: Set[Fluent],
+                                   *expressions):
+        """Collect all fluent applications (atoms) from the given expressions."""
+        for e in expressions:
+            if e is None:
+                continue
+            for atom in fve.get(e):
+                if atom not in target_atoms:
+                    target_atoms.add(atom)
+                    target_symbols.add(atom.fluent())
+
+    def action_touches_relevant(a, relevant_symbols: Set[Fluent]) -> bool:
+        """
+        Check whether this action mentions any currently-relevant fluent symbol
+        in *any* of:
+          - preconditions
+          - durative conditions
+          - effect targets
+          - effect conditions
+          - effect values
+        """
+        exprs = []
+
+        if isinstance(a, InstantaneousAction):
+            exprs.extend(a.preconditions)
+            for eff in a.effects:
+                exprs.append(eff.fluent)
+                exprs.append(eff.condition)
+                exprs.append(eff.value)
+
+        # You can extend here for Events / Processes if needed.
+
+        for e in exprs:
+            if e is None:
+                continue
+            for atom in fve.get(e):
+                if atom.fluent() in relevant_symbols:
+                    return True
+        return False
+
+    def add_all_atoms_from_action(a,
+                                  target_atoms: Set[FNode],
+                                  target_symbols: Set[Fluent]):
+        """Once an action is relevant, add ALL atoms it mentions anywhere."""
+        if isinstance(a, InstantaneousAction):
+            # preconditions
+            add_atoms_from_expressions(target_atoms, target_symbols, *a.preconditions)
+            # effects: targets, conditions, values
+            for eff in a.effects:
+                add_atoms_from_expressions(
+                    target_atoms,
+                    target_symbols,
+                    eff.fluent,
+                    eff.condition,
+                    eff.value,
+                )
+
+        # Extend similarly for Events / Processes if you use them.
+
+    # --- initialization ------------------------------------------------------
+
+    relevant_atoms: Set[FNode] = set()
+    relevant_symbols: Set[Fluent] = set()
+
+    # Seed relevance with atoms from the goals
+    add_atoms_from_expressions(relevant_atoms, relevant_symbols, *problem.goals)
+
+    # (Optional) include trajectory constraints / timed goals:
+    # add_atoms_from_expressions(relevant_atoms, relevant_symbols,
+    #                            *problem.trajectory_constraints)
+    # for gl in problem.timed_goals.values():
+    #     add_atoms_from_expressions(relevant_atoms, relevant_symbols, *gl)
+
+    # --- fixpoint loop -------------------------------------------------------
+
+    changed = True
+    while changed:
+        changed = False
+
+        for a in problem.actions:
+            # If this action touches any currently-relevant fluent in ANY role,
+            # it becomes relevant and we add all atoms from it.
+            if action_touches_relevant(a, relevant_symbols):
+                before = len(relevant_atoms)
+                add_all_atoms_from_action(a, relevant_atoms, relevant_symbols)
+                if len(relevant_atoms) > before:
+                    changed = True
+
+    return relevant_atoms
+
+
+def get_fd_constraints(domain_file: str, problem_file: str, unique_id: str) -> set:
+    try:
+        import up_fast_downward
+    except ImportError:
+        raise ImportError("up_fast_downward is required to compute reachable atoms. Please install it via 'pip install up-fast-downward'.")
+    
+    fd_path = os.path.join(os.path.dirname(up_fast_downward.__file__), 'downward', 'fast-downward.py')
+    sas_file_path = f"output_{unique_id}.sas"
+    cmd = [
+        sys.executable,
+        fd_path,
+        '--translate',
+        '--sas-file',
+        sas_file_path,
+        domain_file,
+        problem_file,
+    ]
+
+    subprocess.run(cmd, check=True)
+
+    exactly_one_groups = []
+    at_most_one_groups = []
+    all_reachable_atoms = set()
+    mutex_groups = []
+
+    # var_values[var_idx][val_idx] = atom_str or None
+    var_values = []
+
+    with open(sas_file_path, 'r') as f:
+        lines = [line.strip() for line in f.readlines()]
+
+    # ------------------------------------------------------------------
+    # First pass: parse variables, build your groups and var_values map
+    # ------------------------------------------------------------------
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+
+        if line == 'begin_variable':
+            # Layout:
+            # i     : begin_variable
+            # i+1   : var_name
+            # i+2   : axiom_layer
+            # i+3   : range (num_values)
+            # i+4.. : values (num_values lines)
+            # last  : end_variable
+            num_values = int(lines[i + 3])
+
+            current_group = set()
+            has_none_of_those = False
+            value_list = []  # for var_values[var_idx]
+
+            for k in range(num_values):
+                val_line = lines[i + 4 + k]
+
+                atom = None
+                if val_line.startswith("Atom ") or val_line.startswith("NegatedAtom "):
+                    # Strip "Atom " or "NegatedAtom " to get the predicate
+                    atom = val_line.split(" ", 1)[1].strip()
+                    current_group.add(atom)
+                    all_reachable_atoms.add(atom)
+                elif "<none of those>" in val_line:
+                    has_none_of_those = True
+
+                # Map this value index to its atom (or None)
+                value_list.append(atom)
+
+            # Categorize the group using your original logic
+            if has_none_of_those:
+                at_most_one_groups.append(current_group)
+            else:
+                exactly_one_groups.append(current_group)
+
+            # Store mapping for later mutex parsing
+            var_values.append(value_list)
+
+            # Skip to the line after end_variable
+            i += 4 + num_values + 1
+
+        else:
+            i += 1
+
+    # ------------------------------------------------------------------
+    # Second pass: parse explicit mutex groups (begin_mutex_group)
+    # ------------------------------------------------------------------
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+
+        if line == "begin_mutex_group":
+            # Layout:
+            # i     : begin_mutex_group
+            # i+1   : N (number of entries)
+            # i+2.. : "var_idx value_idx" N lines
+            # last  : end_mutex_group
+            n = int(lines[i + 1])
+            group = set()
+
+            for k in range(n):
+                entry_line = lines[i + 2 + k]
+                parts = entry_line.split()
+                if len(parts) != 2:
+                    continue
+
+                v_idx = int(parts[0])
+                val_idx = int(parts[1])
+
+                # Defensive checks in case of weird indices
+                if 0 <= v_idx < len(var_values) and 0 <= val_idx < len(var_values[v_idx]):
+                    atom = var_values[v_idx][val_idx]
+                    if atom is not None:
+                        group.add(atom)
+
+            mutex_groups.append(group)
+
+            # Skip past this mutex group
+            i += 2 + n + 1
+
+        else:
+            i += 1
+
+    return {
+        "exactly_one": exactly_one_groups,
+        "at_most_one": at_most_one_groups,
+        "reachable_atoms": all_reachable_atoms,
+        "mutex_groups": mutex_groups,
+    }
+
+    
+

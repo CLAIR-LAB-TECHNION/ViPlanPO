@@ -5,7 +5,7 @@ from viplan.code_helpers import get_logger
 from viplan.policies.policy_interface import Policy, PolicyAction, PolicyObservation
 
 preds_templates = {
-    'reachable': "the {0} is reachable by the agent",
+    'reachable': "the {0} is within reach by the agent",
     'holding':   "the agent is holding the {0}",
     'open':      "the {0} is open",
     'ontop':     "the {0} is on top of the {1}",
@@ -16,7 +16,12 @@ preds_templates = {
 def parse_json_output(output):
     json_start = output.find('{')
     json_end = output.rfind('}')
-    vlm_plan = json.loads(output[json_start:json_end + 1])
+    try:
+        vlm_plan = json.loads(output[json_start:json_end + 1])
+    except json.decoder.JSONDecodeError:
+        print(f'Could not parse JSON output: \n{output}')
+        print('Tried parsing:\n', output[json_start:json_end + 1])
+        raise
     return vlm_plan
 
 

@@ -27,14 +27,25 @@ from .cpp_utils import (
     extract_conformant_plan
 )
 from .policy_interface import Policy, PolicyObservation, PolicyAction
+from .policy_vila import DefaultVILAPolicy
 from .up_utils import (
     create_up_problem,
     get_mapping_from_compiled_actions_to_original_actions,
     get_all_grounded_predicates_for_objects,
-    state_dict_to_up_state
+    convert_state_dict_to_up_compatible,
+    find_goal_relevant_fluents,
 )
 from ..models.custom_vqa.openai import OpenAIVQA, OPENAI_MODEL_ID_PREFIX
 
+
+predicate_questions = {
+    'reachable': "Can the robot reach the {0} with its arm without moving its base?",
+    'holding':   "Is the robot currently holding the {0} in its gripper?",
+    'open':      "Is the {0} currently open?",
+    'ontop':     "Is the {0} resting on top of the {1}?",
+    'inside':    "Is the {0} located inside the {1}?",
+    'nextto':    "Is the {0} positioned next to the {1}?",
+}
 
 class PolicyCPP(Policy):
     def __init__(
@@ -43,12 +54,14 @@ class PolicyCPP(Policy):
         domain_file: str,
         problem_file: str,
         model_name: str,
+        model,
         base_prompt: str,
         tasks_logger: Logger,
         conformant_prob: float = 0.8,
         belief_update_weight: float = 0.5,
+        blind_plan_execution: bool = True,
         use_unknown_token: bool = True,
-        use_fd_constraints: bool = False,
+        use_fd_constraints: bool = True,
         planner_timeout: Optional[float] = None,
         **vlm_inference_kwargs: Dict[str, Any]
     ):
@@ -62,7 +75,7 @@ class PolicyCPP(Policy):
         # create a mapping so we can translate actions back to the original problem.
         # the environment will expect actions from the original problem.
         self.action_mapping = get_mapping_from_compiled_actions_to_original_actions(
-            orig_problem, self.contingent_problem
+            self.contingent_problem, orig_problem
         )
 
         # set the conformant probability threshold for choosing the states in the belief.
@@ -73,7 +86,12 @@ class PolicyCPP(Policy):
 
         # initialize the belief with total uncertainty over all fluents.
         # represented with maximum entropy (0.5 probability for each fluent).
-        self.all_fluents = get_all_grounded_predicates_for_objects(orig_problem)
+        if self.use_fd_constraints:
+            self.all_fluents = find_goal_relevant_fluents(
+                orig_problem
+            )
+        else:
+            self.all_fluents = get_all_grounded_predicates_for_objects(orig_problem)
         self.factored_belief: Dict[Any, float] = {
             fluent: 0.5
             for fluent in self.all_fluents
@@ -128,16 +146,25 @@ class PolicyCPP(Policy):
             self.tokens_of_interest.append(
                 ["unknown", "Unknown"]
             )
-        
+
+        self.blind_plan_execution = blind_plan_execution
         self.base_prompt = base_prompt
         self.vlm_inference_kwargs = vlm_inference_kwargs
         self.task_logger = tasks_logger
+        with open('data/prompts/planning/vila_igibson_json.md', 'r') as f:
+            self.fallback_vila_policy = DefaultVILAPolicy(
+                model=model,
+                base_prompt=f.read(),
+                logger=self.task_logger,
+                predicate_language=predicate_language,
+            )
 
     def next_action(self, observation: PolicyObservation, log_extra: Dict[str, Any]) -> PolicyAction:
         # if the previous action was executed, step action in belief space
         if log_extra is None:
             log_extra = dict()
-        if (observation.previous_actions and
+        if (not self.blind_plan_execution and
+            observation.previous_actions and
             self._prev_action is not None and
             observation.previous_actions[-1]['outcome'] == 'executed'):
             assert self.belief_set is not None, "Belief set is not initialized."
@@ -155,23 +182,27 @@ class PolicyCPP(Policy):
         )
 
         # update the factored belief based on VLM outputs
-        self._update_belief(vlm_prob_ground)
+        self._update_belief(vlm_prob_ground, log_plan_extra)
 
         # check causes for replanning
         replan = False
-        if self.current_plan is None:  # does plan exist?
+        replan_reason = ""
+        if not self.current_plan:  # does plan exist?
             replan = True
-        else:
+            replan_reason += "no current plan; "
+        elif not self.blind_plan_execution:
             # check if the probability of the current belief set
             # still meets the conformant probability threshold
             total_belief_prob = self._get_current_belief_set_probability()
             if total_belief_prob < self.conformant_prob:
                 replan = True
+                replan_reason += "belief probability below threshold; "
 
             # check if next action is safe
-            next_action = self.current_plan[0]
+            next_action = self.action_mapping(self.current_plan[0])
             if not self._is_safe_action(next_action):
                 replan = True
+                replan_reason += "next action not safe; "
 
         log_plan_extra['replan'] = replan
         if replan:
@@ -179,22 +210,15 @@ class PolicyCPP(Policy):
             self._set_belief_set_and_plan(log_plan_extra)
             
             self.task_logger.info(
-                "Replanning executed.", extra=log_plan_extra
+                "Replanning executed.", extra=log_plan_extra | {"replan_reason": replan_reason}
             )
 
         if self.current_plan is None:
             self.task_logger.info(
                 "No plan. Exploring", extra=log_plan_extra
             )
-            exploratory_action = self._sample_random_exploratory_action(observation)
-            if exploratory_action is None:
-                return None  # no plan found
-
-            self._prev_action = exploratory_action
-            return PolicyAction(
-                name=exploratory_action.action.name,
-                parameters=list(map(str, exploratory_action.actual_parameters)),
-                raw_response=["exploratory"],
+            return self.fallback_vila_policy.next_action(
+                observation, log_extra
             )
 
         # get the next action from the current plan
@@ -249,10 +273,6 @@ class PolicyCPP(Policy):
                 for i, fluent in enumerate(self.all_fluents)
             }
 
-            if all(not value for value in state.values()):
-                # Temporary hack until we implement constraints.
-                state = {fluent: True for fluent in state}
-
             # set initial state constraints in the contingent problem
             # based on all states selected so far.
             set_cp_initial_state_constraints_from_belief(
@@ -261,10 +281,17 @@ class PolicyCPP(Policy):
             )
 
             # try to find a conformant plan for the current belief set
-            plan_res = self.planner.solve(
-                self.contingent_problem,
-                timeout=self.planner_timeout
-            )
+            try:
+                plan_res = self.planner.solve(
+                    self.contingent_problem,
+                    timeout=self.planner_timeout
+                )
+            except Exception as e:
+                self.task_logger.error(
+                    "Error during planning",
+                    extra=log_plan_extra | {"exception": str(e)}
+                )
+                break  # planning failed
 
             if plan_res.status != PlanGenerationResultStatus.SOLVED_SATISFICING:
                 break  # no plan found for this belief set
@@ -288,6 +315,8 @@ class PolicyCPP(Policy):
                 "No conformant plan found for the current belief.",
                 extra=log_plan_extra
             )
+        else:
+            log_plan_extra['plan'] = list(map(str, self.current_plan))
 
         selected_states = [
             {
@@ -297,14 +326,15 @@ class PolicyCPP(Policy):
             for state in self.belief_set
         ]
         self.task_logger.info(
-            "New belief set",
+            "New conformant plan",
             extra=log_plan_extra | {
-                "selected_states": selected_states
+                "selected_states": selected_states,
+                "n_states": len(self.belief_set)
             }
         )
         
     
-    def _update_belief(self, fluent_probs: Dict[FNode, Optional[float]]) -> None:
+    def _update_belief(self, fluent_probs: Dict[FNode, Optional[float]], log_extra: Dict[str, Any]) -> None:
         for fluent, prob in fluent_probs.items():
             if prob is None:
                 continue  # no info about this fluent
@@ -318,18 +348,23 @@ class PolicyCPP(Policy):
             )
             
             self.factored_belief[fluent] = float(expit(updated_logit))
+        self.task_logger.info('Belief updated', log_extra | {
+            str(fluent): self.factored_belief[fluent] for fluent in self.factored_belief.keys()
+        })
 
     def _belief_step(self, action: ActionInstance) -> None:
         new_belief_set = []
+        up_state = self._sim.get_initial_state()
         for state in self.belief_set:
             # create a UPState object from the state dict
-            up_state = state_dict_to_up_state(
+            state_dict = convert_state_dict_to_up_compatible(
                 self._sim._problem,
                 {
                     str(fluent): v
                     for fluent, v in state.items()
                 }
             )
+            up_state = up_state.make_child(state_dict)
                 
             # step the simulator to get the next state
             next_state = self._sim.apply(up_state, action)
@@ -346,7 +381,7 @@ class PolicyCPP(Policy):
         merged_belief_set = []
         seen_states = set()
         for state in new_belief_set:
-            state_tuple = tuple(sorted(state.items()))
+            state_tuple = tuple(state.items())
             if state_tuple not in seen_states:
                 seen_states.add(state_tuple)
                 merged_belief_set.append(state)
@@ -355,15 +390,17 @@ class PolicyCPP(Policy):
         self.belief_set = merged_belief_set
     
     def _is_safe_action(self, action: ActionInstance) -> bool:
+        up_state = self._sim.get_initial_state()
         for state in self.belief_set:
             # create a UPState object from the state dict
-            up_state = state_dict_to_up_state(
+            state_dict = convert_state_dict_to_up_compatible(
                 self._sim._problem,
                 {
                     str(fluent): v
                     for fluent, v in state.items()
                 }
             )
+            up_state = up_state.make_child(state_dict)
 
             # check action applicability            
             if not self._sim.is_applicable(up_state, action):
@@ -382,7 +419,8 @@ class PolicyCPP(Policy):
     def _all_fluent_prompts(self, fluents: List[FNode]):
         return [self._format_prompt(fluent) for fluent in fluents]
 
-    def _estimate_fluent_prob(self, images: Image, fluent_list: List[FNode]) -> Dict[Any, Optional[float]]:
+    def _estimate_fluent_prob(self, images: Image, fluent_list: List[FNode],
+                              clamp_epsilon=1e-6) -> Dict[Any, Optional[float]]:
         # get a query for each fluent
         fluent_queries = self._all_fluent_prompts(fluent_list)
 
@@ -404,12 +442,19 @@ class PolicyCPP(Policy):
                 unknown_prob = 0.0    
 
             # determine fluent probability based on token probabilities
-            if unknown_prob >= max(yes_prob, no_prob):
+            if unknown_prob >= max(yes_prob, no_prob) or (yes_prob + no_prob == 0.0):
                 fluent_probs[fluent] = None  # no info
-            elif yes_prob + no_prob > 0.0:
-                fluent_probs[fluent] = yes_prob / (yes_prob + no_prob)  # normalized yes prob
             else:
-                fluent_probs[fluent] = yes_prob / (yes_prob + no_prob)  # normalized yes prob
+                # normalized yes probability
+                fluent_probs[fluent] = yes_prob / (yes_prob + no_prob)
+
+                # clamp to [epsilon, 1 - epsilon] to avoid numerical issues
+                fluent_probs[fluent] = np.clip(
+                    fluent_probs[fluent], clamp_epsilon, 1 - clamp_epsilon
+                )
+
+                # convert to float
+                fluent_probs[fluent] = float(fluent_probs[fluent])
 
         return fluent_probs
 
