@@ -27,6 +27,7 @@ from .cpp_utils import (
     extract_conformant_plan
 )
 from .policy_interface import Policy, PolicyObservation, PolicyAction
+from .policy_vila import DefaultVILAPolicy
 from .up_utils import (
     create_up_problem,
     get_mapping_from_compiled_actions_to_original_actions,
@@ -63,7 +64,7 @@ class PolicyCPP(Policy):
         # create a mapping so we can translate actions back to the original problem.
         # the environment will expect actions from the original problem.
         self.action_mapping = get_mapping_from_compiled_actions_to_original_actions(
-            orig_problem, self.contingent_problem
+            self.contingent_problem, orig_problem
         )
 
         # set the conformant probability threshold for choosing the states in the belief.
@@ -134,10 +135,16 @@ class PolicyCPP(Policy):
             self.tokens_of_interest.append(
                 ["unknown", "Unknown"]
             )
-        
+
         self.base_prompt = base_prompt
         self.vlm_inference_kwargs = vlm_inference_kwargs
         self.task_logger = tasks_logger
+        self.fallback_vila_policy = DefaultVILAPolicy(
+            model=self.vlm_model,
+            base_prompt=base_prompt,
+            logger=self.task_logger,
+            predicate_language=predicate_language,
+        )
 
     def next_action(self, observation: PolicyObservation, log_extra: Dict[str, Any]) -> PolicyAction:
         # if the previous action was executed, step action in belief space
@@ -192,15 +199,8 @@ class PolicyCPP(Policy):
             self.task_logger.info(
                 "No plan. Exploring", extra=log_plan_extra
             )
-            exploratory_action = self._sample_random_exploratory_action()
-            if exploratory_action is None:
-                return None  # no plan found
-
-            self._prev_action = exploratory_action
-            return PolicyAction(
-                name=exploratory_action.action.name,
-                parameters=list(map(str, exploratory_action.actual_parameters)),
-                raw_response=["exploratory"],
+            return self.fallback_vila_policy.next_action(
+                observation, log_extra
             )
 
         # get the next action from the current plan
