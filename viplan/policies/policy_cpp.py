@@ -45,6 +45,7 @@ class PolicyCPP(Policy):
         domain_file: str,
         problem_file: str,
         model_name: str,
+        model,
         base_prompt: str,
         tasks_logger: Logger,
         conformant_prob: float = 0.8,
@@ -140,7 +141,7 @@ class PolicyCPP(Policy):
         self.vlm_inference_kwargs = vlm_inference_kwargs
         self.task_logger = tasks_logger
         self.fallback_vila_policy = DefaultVILAPolicy(
-            model=self.vlm_model,
+            model=model,
             base_prompt=base_prompt,
             logger=self.task_logger,
             predicate_language=predicate_language,
@@ -182,7 +183,7 @@ class PolicyCPP(Policy):
                 replan = True
 
             # check if next action is safe
-            next_action = self.current_plan[0]
+            next_action = self.action_mapping(self.current_plan[0])
             if not self._is_safe_action(next_action):
                 replan = True
 
