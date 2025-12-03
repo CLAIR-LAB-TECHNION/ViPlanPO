@@ -168,6 +168,9 @@ class PolicyCPP(Policy):
             "planner_timeout": self.planner_timeout,
             "vlm_model_name": model_name,
         }
+
+        if log_extra is None:
+            log_extra = dict()
         self.task_logger.info(
             "PolicyCPP initialized",
             extra=log_extra | init_info
@@ -276,6 +279,7 @@ class PolicyCPP(Policy):
 
     def _set_belief_set_and_plan(self, log_plan_extra) -> None:
         self.belief_set = []
+        self.set_acc_probs = []
         self.current_plan = None
 
         # accumulate probability mass until reaching threshold
@@ -287,40 +291,79 @@ class PolicyCPP(Policy):
                 fluent: (state_str[i] == '1')
                 for i, fluent in enumerate(self.all_fluents)
             }
+            self.belief_set.append(state)
+            total_prob += prob
+            self.set_acc_probs.append(total_prob)
+        
+        
+        # set initial state constraints in the contingent problem
+        # based on all states selected so far.
+        set_cp_initial_state_constraints_from_belief(
+            self.contingent_problem,
+            self.belief_set
+        )
 
-            # set initial state constraints in the contingent problem
-            # based on all states selected so far.
-            set_cp_initial_state_constraints_from_belief(
+        # try to find a conformant plan for the largest belief set
+        plan_res = None
+        try:
+            print(f'attempting to plan for belief set of size {len(self.belief_set)} with probability {total_prob}')
+            plan_res = self.planner.solve(
                 self.contingent_problem,
-                self.belief_set + [state]
+                timeout=self.planner_timeout
+            )
+        except Exception as e:
+            self.task_logger.error(
+                "Error during planning",
+                extra=log_plan_extra | {"exception": str(e)}
             )
 
-            # try to find a conformant plan for the current belief set
-            try:
-                plan_res = self.planner.solve(
-                    self.contingent_problem,
-                    timeout=self.planner_timeout
-                )
-            except Exception as e:
-                self.task_logger.error(
-                    "Error during planning",
-                    extra=log_plan_extra | {"exception": str(e)}
-                )
-                break  # planning failed
-
-            if plan_res.status != PlanGenerationResultStatus.SOLVED_SATISFICING:
-                break  # no plan found for this belief set
-            
-            # found a conformant plan, add this state to the belief set
-            # and save plan
-            self.belief_set.append(state)
+        if (plan_res is not None and
+                plan_res.status == PlanGenerationResultStatus.SOLVED_SATISFICING):
             self.current_plan = extract_conformant_plan(plan_res.plan.root_node)
-            log_plan_extra['has_plan'] = self.current_plan is not None
+        else:
+            # do a binary search to find the largest belief set for which a conformant plan exists
+            low = 0
+            high = len(self.belief_set) - 1
+            best_plan = None
+            best_prob = 0.0
+            best_belief_set_size = 0
+            while low <= high:
+                mid = (low + high) // 2
 
-            # check if we reached the conformant probability threshold
-            total_prob += prob
-            if total_prob >= self.conformant_prob:
-                break
+                # set initial state constraints for the current belief subset
+                set_cp_initial_state_constraints_from_belief(
+                    self.contingent_problem,
+                    self.belief_set[:mid + 1]
+                )
+
+                plan_res = None
+                try:
+                    print(f'attempting to plan for belief set of size {len(self.belief_set)} with probability {total_prob}')
+                    plan_res = self.planner.solve(
+                        self.contingent_problem,
+                        timeout=self.planner_timeout
+                    )
+                except Exception as e:
+                    self.task_logger.error(
+                        "Error during planning",
+                        extra=log_plan_extra | {"exception": str(e)}
+                    )
+
+                if (plan_res is not None and
+                        plan_res.status == PlanGenerationResultStatus.SOLVED_SATISFICING):
+                    # found a plan for this belief subset
+                    best_plan = extract_conformant_plan(plan_res.plan.root_node)
+                    best_prob = self.set_acc_probs[mid]
+                    best_belief_set_size = mid + 1
+                    low = mid + 1  # try for a larger set
+                else:
+                    high = mid - 1  # try for a smaller set
+            
+            self.current_plan = best_plan
+            total_prob = best_prob
+            self.belief_set = self.belief_set[:best_belief_set_size]
+        
+
         log_plan_extra['conformant_plan_success_probability'] = total_prob
         log_plan_extra['num_selected_states'] = len(self.belief_set)
 
