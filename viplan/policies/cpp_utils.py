@@ -55,6 +55,11 @@ def set_cp_initial_state_constraints_from_belief(
         problem: ContingentProblem,
         possible_init_states: Iterable[Dict[FNode, bool]]
 ) -> None:
+    # clear existing initial state
+    problem._initial_value.clear()
+    problem._or_initial_constraints.clear()
+    problem._oneof_initial_constraints.clear()
+
     # set all known fluents
     unknown_fluents = set()
     for f, v in possible_init_states[0].items():
