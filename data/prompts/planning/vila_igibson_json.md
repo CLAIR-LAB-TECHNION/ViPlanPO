@@ -20,6 +20,7 @@ You will also receive feedback of the previously taken actions, with a note show
 
 ## Description of the environment
 The environment is a virtual household simulator, with objects and furniture which can be interacted with. Keep in mind that some objects might not be visible or immediately reachable, in which case you need to navigate to them first. If after navigating to an object it is still not reachable, you might need to open a container.
+Visible objects related to the task are highlighted with bounding boxes and labeled. Objects that are not in bounding boxes are not relevant to the task, ignore them when you answer.
 
 ## Additional information
 {priviledged_info}
