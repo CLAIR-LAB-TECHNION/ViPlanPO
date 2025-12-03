@@ -2,7 +2,8 @@ import json
 from typing import Optional, Dict, Any
 
 from viplan.code_helpers import get_logger
-from viplan.policies.policy_interface import Policy, PolicyAction, PolicyObservation, PREDICATE_QUESTIONS
+from viplan.policies.natural_language_utils import PREDICATE_QUESTIONS, load_prompt
+from viplan.policies.policy_interface import Policy, PolicyAction, PolicyObservation
 
 
 def parse_json_output(output):
@@ -33,10 +34,12 @@ def get_priviledged_predicates_str(predicates):
 class DefaultVILAPolicy(Policy):
     """Default policy that reproduces the original VILA planning loop."""
 
-    def __init__(self, model, base_prompt, logger=None, **kwargs):
+    def __init__(self, model, goal_string: str, logger=None, **kwargs):
         super().__init__()
         self.model = model
-        self.base_prompt = base_prompt
+        self.base_prompt = load_prompt("planning/vila_igibson_json.md").replace(
+            "{goal_string}", goal_string
+        )
         self.logger = logger or get_logger()
 
     def _format_prompt(self, observation: PolicyObservation) -> str:

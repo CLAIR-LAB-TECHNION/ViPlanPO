@@ -274,7 +274,6 @@ def main(
     domain_file: os.PathLike,
     base_url: str,
     model_name: str,
-    prompt_path: os.PathLike,
     seed: int = 1,
     output_dir: os.PathLike = None,
     hf_cache_dir: os.PathLike = None,
@@ -295,14 +294,11 @@ def main(
     if hf_cache_dir is None:
         hf_cache_dir = os.environ.get("HF_HOME", None)
         logger.debug(f"Using HF cache dir: {hf_cache_dir}")
-    
+
     model = load_vlm(model_name, hf_cache_dir=hf_cache_dir, logger=logger, **kwargs)
-    
+
     unified_planning.shortcuts.get_environment().credits_stream = None # Disable planner printouts
-    
-    with open(prompt_path, 'r') as f:
-        base_prompt = f.read()
-    
+
     PolicyCls = resolve_policy_class(policy_cls, DefaultVILAPolicy)
 
     results = {}
@@ -323,10 +319,9 @@ def main(
         for scene_id, instance_id in scene_instance_pairs:
             env = iGibsonClient(task=task, scene_id=scene_id, instance_id=instance_id, problem=problem, base_url=base_url, logger=logger)
             env.reset() # Reset = send a request to the server to re-initialize the task (also needed when switching tasks)
-            
+
             goal_string = get_goal_str(env)
             logger.info(f"Goal: {goal_string}")
-            problem_prompt = base_prompt.replace("{goal_string}", goal_string)
 
             img_output_dir = get_img_output_dir('vila', instance_id, scene_id, task)
 
@@ -353,7 +348,7 @@ def main(
                     problem_file=problem_file,
                     model=model,
                     model_name=model_name,
-                    base_prompt=problem_prompt,
+                    goal_string=goal_string,
                     tasks_logger=tasks_logger,
                     logger=logger,
                     problem=problem,
@@ -409,7 +404,6 @@ def main(
     results['metadata'] = {
         'model': model_name,
         'seed': seed,
-        'prompt_path': prompt_path,
         'max_steps': max_steps,
         'job_id': unique_id,
         'use_predicate_groundings': use_predicate_groundings,
