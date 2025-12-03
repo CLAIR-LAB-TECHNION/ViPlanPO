@@ -52,8 +52,8 @@ class PolicyCPP(Policy):
         tasks_logger: Logger,
         log_extra: Optional[Dict[str, Any]] = None,
         conformant_prob: float = 0.8,
-        belief_update_weight: float = 0.5,
-        blind_plan_execution: bool = True,
+        belief_update_weight: float = 0.3,
+        blind_plan_execution: bool = False,
         use_unknown_token: bool = True,
         use_fd_constraints: bool = True,
         planner_timeout: Optional[float] = None,
@@ -378,6 +378,8 @@ class PolicyCPP(Policy):
                 
             # step the simulator to get the next state
             next_state = self._sim.apply(up_state, action)
+            if next_state is None:
+                continue
 
             # convert the UPState back to a dict representation
             next_state_dict = {
