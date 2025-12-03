@@ -147,7 +147,6 @@ class PolicyCPP(Policy):
                 model=model,
                 base_prompt=f.read(),
                 logger=self.task_logger,
-                predicate_language=predicate_language,
             )
         
         # log all relevant initialization info
