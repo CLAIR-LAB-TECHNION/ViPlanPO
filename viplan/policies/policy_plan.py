@@ -1,4 +1,5 @@
 import copy
+from pathlib import Path
 from typing import Optional, Dict, Any
 
 from viplan.code_helpers import get_logger, parse_output
@@ -205,7 +206,8 @@ def cast_to_yes_no(parsed_answer, logger):
     return parsed_answer
 
 
-DEFAULT_PLAN_PROMPT = "benchmark/igibson/prompt_po_all-BB.md"
+DEFAULT_PLAN_PROMPT_PATH = Path("benchmark/igibson/prompt_po_all-BB.md")
+DEFAULT_PLAN_PROMPT = load_prompt(DEFAULT_PLAN_PROMPT_PATH)
 
 
 def ask_vlm(questions, image, model, base_prompt, logger, env, img_log_info, check_type=None, **kwargs):

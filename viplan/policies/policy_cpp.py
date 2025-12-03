@@ -8,6 +8,7 @@
 
 import os
 import random
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 from logging import Logger
 
@@ -38,6 +39,8 @@ from .up_utils import (
 )
 from ..models.custom_vqa.openai import OpenAIVQA, OPENAI_MODEL_ID_PREFIX
 
+BASE_PROMPT_FILE_PATH = Path("benchmark/igibson/prompt_po_all-BB.md")
+
 
 class PolicyCPP(Policy):
     def __init__(
@@ -59,7 +62,7 @@ class PolicyCPP(Policy):
     ):
         super().__init__()
 
-        base_prompt = load_prompt("benchmark/igibson/prompt_po_all-BB.md")
+        base_prompt = load_prompt(BASE_PROMPT_FILE_PATH)
 
         # convert the classical problem into a ContingentProblem object that will
         # represent the conformant problem internally.

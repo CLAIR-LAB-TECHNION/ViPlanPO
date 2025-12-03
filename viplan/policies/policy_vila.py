@@ -1,9 +1,12 @@
 import json
+from pathlib import Path
 from typing import Optional, Dict, Any
 
 from viplan.code_helpers import get_logger
 from viplan.policies.natural_language_utils import PREDICATE_QUESTIONS, load_prompt
 from viplan.policies.policy_interface import Policy, PolicyAction, PolicyObservation
+
+BASE_PROMPT_FILE_PATH = Path("planning/vila_igibson_json.md")
 
 
 def parse_json_output(output):
@@ -37,7 +40,7 @@ class DefaultVILAPolicy(Policy):
     def __init__(self, model, goal_string: str, logger=None, **kwargs):
         super().__init__()
         self.model = model
-        self.base_prompt = load_prompt("planning/vila_igibson_json.md").replace(
+        self.base_prompt = load_prompt(BASE_PROMPT_FILE_PATH).replace(
             "{goal_string}", goal_string
         )
         self.logger = logger or get_logger()
