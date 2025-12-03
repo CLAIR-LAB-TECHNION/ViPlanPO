@@ -163,7 +163,6 @@ class PolicyCPP(Policy):
             "use_fd_constraints": self.use_fd_constraints,
             "planner_timeout": self.planner_timeout,
             "vlm_model_name": model_name,
-            "vlm_inference_kwargs": vlm_inference_kwargs,
         }
         self.task_logger.info(
             "PolicyCPP initialized",
