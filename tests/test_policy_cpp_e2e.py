@@ -68,8 +68,8 @@ def test_policy_cpp_end_to_end(monkeypatch):
             domain_file=str(domain_path),
             problem_file=str(problem_path),
             model_name="gpt-test",
-            base_prompt="Answer yes or no.",
             tasks_logger=logger,
+            goal_string="Answer yes or no.",
         )
     except (
         RuntimeError,

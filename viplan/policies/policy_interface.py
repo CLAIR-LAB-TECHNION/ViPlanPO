@@ -19,16 +19,6 @@ from typing import Any, Dict, Iterable, Mapping, Optional, Sequence, Type
 from unified_planning.model import Problem
 
 
-PREDICATE_QUESTIONS = {
-    'reachable': "Can the robot reach the {0} with its arm without moving its base?",
-    'holding':   "Is the robot currently holding the {0} in its gripper?",
-    'open':      "Is the {0} currently open?",
-    'ontop':     "Is the {0} resting on top of the {1}?",
-    'inside':    "Is the {0} located inside the {1}?",
-    'nextto':    "Is the {0} positioned next to the {1}?",
-}
-
-
 try:  # PIL is an optional dependency at import time.
     from PIL import Image
 except Exception:  # pragma: no cover - used only when PIL is not available.

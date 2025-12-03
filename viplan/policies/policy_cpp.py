@@ -8,6 +8,7 @@
 
 import os
 import random
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 from logging import Logger
 
@@ -26,7 +27,8 @@ from .cpp_utils import (
     set_cp_initial_state_constraints_from_belief,
     extract_conformant_plan
 )
-from .policy_interface import Policy, PolicyObservation, PolicyAction, PREDICATE_QUESTIONS
+from .natural_language_utils import PREDICATE_QUESTIONS, load_prompt
+from .policy_interface import Policy, PolicyObservation, PolicyAction
 from .policy_vila import DefaultVILAPolicy
 from .up_utils import (
     create_up_problem,
@@ -37,6 +39,8 @@ from .up_utils import (
 )
 from ..models.custom_vqa.openai import OpenAIVQA, OPENAI_MODEL_ID_PREFIX
 
+BASE_PROMPT_FILE_PATH = Path("benchmark/igibson/prompt_po_all-BB.md")
+
 
 class PolicyCPP(Policy):
     def __init__(
@@ -45,7 +49,6 @@ class PolicyCPP(Policy):
         problem_file: str,
         model_name: str,
         model,
-        base_prompt: str,
         tasks_logger: Logger,
         log_extra: Optional[Dict[str, Any]] = None,
         conformant_prob: float = 0.8,
@@ -54,9 +57,12 @@ class PolicyCPP(Policy):
         use_unknown_token: bool = True,
         use_fd_constraints: bool = True,
         planner_timeout: Optional[float] = None,
+        goal_string: str = "",
         **vlm_inference_kwargs: Dict[str, Any]
     ):
         super().__init__()
+
+        base_prompt = load_prompt(BASE_PROMPT_FILE_PATH)
 
         # convert the classical problem into a ContingentProblem object that will
         # represent the conformant problem internally.
@@ -142,12 +148,11 @@ class PolicyCPP(Policy):
         self.base_prompt = base_prompt
         self.vlm_inference_kwargs = vlm_inference_kwargs
         self.task_logger = tasks_logger
-        with open('data/prompts/planning/vila_igibson_json.md', 'r') as f:
-            self.fallback_vila_policy = DefaultVILAPolicy(
-                model=model,
-                base_prompt=f.read(),
-                logger=self.task_logger,
-            )
+        self.fallback_vila_policy = DefaultVILAPolicy(
+            model=model,
+            goal_string=goal_string,
+            logger=self.task_logger,
+        )
         
         # log all relevant initialization info
         init_info = {

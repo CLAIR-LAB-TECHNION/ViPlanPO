@@ -13,9 +13,10 @@ from unified_planning.io import PDDLReader
 
 from viplan.code_helpers import get_logger, parse_output, get_unique_id
 from viplan.planning.planning_utils import get_plan, update_problem
+from viplan.policies.natural_language_utils import PREDICATE_QUESTIONS
 from viplan.policies.policy_interface import (
     PolicyObservation,
-    resolve_policy_class, PREDICATE_QUESTIONS,
+    resolve_policy_class,
 )
 from viplan.policies.policy_plan import DefaultPlanningPolicy, PREDICATE_QUESTIONS, get_questions, cast_to_yes_no, \
     update_vlm_state, check_action

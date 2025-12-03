@@ -245,7 +245,6 @@ def main(
     domain_file: os.PathLike,
     base_url: str,
     model_name: str,
-    prompt_path: os.PathLike,
     seed: int = 1,
     output_dir: os.PathLike = None,
     hf_cache_dir: os.PathLike = None,
@@ -271,9 +270,6 @@ def main(
     
     unified_planning.shortcuts.get_environment().credits_stream = None # Disable planner printouts
     
-    with open(prompt_path, 'r') as f:
-        base_prompt = f.read()
-    
     PolicyCls = resolve_policy_class(policy_cls, DefaultVILAPolicy)
 
     results = {}
@@ -294,14 +290,13 @@ def main(
         for scene_id, instance_id in tqdm(scene_instance_pairs, desc="Scene instances"):
             env = iGibsonClient(task=task, scene_id=scene_id, instance_id=instance_id, problem=problem, base_url=base_url, logger=logger)
             env.reset() # Reset = send a request to the server to re-initialize the task (also needed when switching tasks)
-            
+
             goal_string = get_goal_str(env)
             logger.info(f"Goal: {goal_string}")
-            problem_prompt = base_prompt.replace("{goal_string}", goal_string)
 
             policy = PolicyCls(
                 model=model,
-                base_prompt=problem_prompt,
+                goal_string=goal_string,
                 predicate_language=preds_templates,
                 logger=logger,
                 problem=problem,
@@ -370,7 +365,6 @@ def main(
     results['metadata'] = {
         'model': model_name,
         'seed': seed,
-        'prompt_path': prompt_path,
         'max_steps': max_steps,
         'job_id': unique_id,
         'use_predicate_groundings': use_predicate_groundings,
