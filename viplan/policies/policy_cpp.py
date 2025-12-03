@@ -373,6 +373,7 @@ class PolicyCPP(Policy):
                 "No conformant plan found for the current belief.",
                 extra=log_plan_extra
             )
+            return  # no plan found
         else:
             log_plan_extra['plan'] = list(map(str, self.current_plan))
 
