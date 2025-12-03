@@ -1,16 +1,18 @@
 import copy
+from pathlib import Path
 from typing import Optional, Dict, Any
 
 from viplan.code_helpers import get_logger, parse_output
 from viplan.log_utils import save_vlm_question_images
+from viplan.policies.natural_language_utils import PREDICATE_QUESTIONS, load_prompt
 from viplan.policies.policy_interface import Policy, PolicyAction, PolicyObservation
 
 
 class DefaultPlanningPolicy(Policy):
     """Default policy that sequentially executes planner actions."""
 
-    def __init__(self, action_queue, predicate_language, logger=None, **kwargs):
-        super().__init__(predicate_language=predicate_language)
+    def __init__(self, action_queue, logger=None, **kwargs):
+        super().__init__()
         self.action_queue = action_queue
         self.logger = logger or get_logger()
 
@@ -27,16 +29,6 @@ class DefaultPlanningPolicy(Policy):
         )
 
 
-predicate_questions = {
-    'reachable': "Is the {0} in reach of the agent?",
-    'holding':   "Is the agent holding the {0}?",
-    'open':      "Is the {0} open?",
-    'ontop':     "Is the {0} on top of the {1}?",
-    'inside':    "Is the {0} inside the {1}?",
-    'nextto':    "Is the {0} next to the {1}?",
-}
-
-
 def get_questions(predicates):
     questions = {}
     if isinstance(predicates, dict):
@@ -44,8 +36,8 @@ def get_questions(predicates):
             for args in predicates[predicate]:
                 key = predicate + " " + args
                 value = predicates[predicate][args]
-                if predicate in predicate_questions:
-                    questions[key] = (predicate_questions[predicate].format(*args.split(",")), value)
+                if predicate in PREDICATE_QUESTIONS:
+                    questions[key] = (PREDICATE_QUESTIONS[predicate].format(*args.split(",")), value)
                 else:
                     raise ValueError(f"Unknown predicate {predicate}")
     else:
@@ -54,8 +46,8 @@ def get_questions(predicates):
             predicate = key.split(" ")[0]
             value = pred[key]
             args = key.split(" ")[1].split(",")
-            if predicate in predicate_questions:
-                questions[predicate + " " + ",".join(args)] = (predicate_questions[predicate].format(*args), value)
+            if predicate in PREDICATE_QUESTIONS:
+                questions[predicate + " " + ",".join(args)] = (PREDICATE_QUESTIONS[predicate].format(*args), value)
             else:
                 raise ValueError(f"Unknown predicate {predicate}")
 
@@ -214,8 +206,12 @@ def cast_to_yes_no(parsed_answer, logger):
     return parsed_answer
 
 
+DEFAULT_PLAN_PROMPT_PATH = Path("benchmark/igibson/prompt_po_all-BB.md")
+DEFAULT_PLAN_PROMPT = load_prompt(DEFAULT_PLAN_PROMPT_PATH)
+
+
 def ask_vlm(questions, image, model, base_prompt, logger, env, img_log_info, check_type=None, **kwargs):
-    base_prompt = open(base_prompt, 'r').read()
+    base_prompt = load_prompt(base_prompt)
     prompts = [base_prompt + q[0] for q in questions.values()]
     images = [image for _ in questions]
 
@@ -298,7 +294,7 @@ def get_question_preds(predicates, visible_preds):
     return question_preds, non_visible_preds
 
 
-def check_preconditions(env, vlm_state, preconditions, grounded_args, model, base_prompt, logger, text_only=False, img_log_info=None):
+def check_preconditions(env, vlm_state, preconditions, grounded_args, model, base_prompt=DEFAULT_PLAN_PROMPT, logger=None, text_only=False, img_log_info=None):
     precondition_preds = get_preconditions_predicates(env, preconditions, grounded_args)
     logger.debug(f"Precondition predicates: {precondition_preds}")
     visible_preds = env.visible_predicates
@@ -335,7 +331,7 @@ def check_preconditions(env, vlm_state, preconditions, grounded_args, model, bas
     return results, non_visible_results
 
 
-def check_effects(env, vlm_state, effects, grounded_args, model, base_prompt, previous_state, logger, img_log_info, text_only=False):
+def check_effects(env, vlm_state, effects, grounded_args, model, base_prompt=DEFAULT_PLAN_PROMPT, previous_state=None, logger=None, img_log_info=None, text_only=False):
     effect_preds = get_effects_predicates(env, effects, grounded_args, previous_state)
     logger.debug(f"Effect predicates: {effect_preds}")
     visible_preds = env.visible_predicates
@@ -369,7 +365,7 @@ def check_effects(env, vlm_state, effects, grounded_args, model, base_prompt, pr
     return results, vlm_state
 
 
-def check_action(env, action, vlm_state, model, base_prompt, logger, img_log_info, text_only=False):
+def check_action(env, action, vlm_state, model, base_prompt=DEFAULT_PLAN_PROMPT, logger=None, img_log_info=None, text_only=False):
     preconditions = action.action.preconditions
     effects = action.action.effects
     grounded_params = {param.name: str(value) for param, value in zip(action.action.parameters, action.actual_parameters)}

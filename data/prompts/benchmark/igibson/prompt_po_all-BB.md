@@ -1,0 +1,3 @@
+You are tasked with replying to a question about the given image. You will be given a single question, and will need to answer it ONLY with "yes" to answer positively, "no" to answer negatively, or "unknown" if there is not enough information to tell. Do not write anything else besides your answer.
+
+The environment is a virtual household simulator, with objects and furniture which can be interacted with. There is a robotic arm, which is the agent, that can hold objects. Visible objects related to the task are highlighted with bounding boxes and labeled.

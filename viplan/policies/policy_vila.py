@@ -1,17 +1,13 @@
 import json
+from pathlib import Path
 from typing import Optional, Dict, Any
 
 from viplan.code_helpers import get_logger
+from viplan.policies.natural_language_utils import PREDICATE_QUESTIONS, load_prompt
 from viplan.policies.policy_interface import Policy, PolicyAction, PolicyObservation
 
-preds_templates = {
-    'reachable': "the {0} is within reach by the agent",
-    'holding':   "the agent is holding the {0}",
-    'open':      "the {0} is open",
-    'ontop':     "the {0} is on top of the {1}",
-    'inside':    "the {0} is inside the {1}",
-    'nextto':    "the {0} is next to the {1}",
-}
+BASE_PROMPT_FILE_PATH = Path("planning/vila_igibson_json.md")
+
 
 def parse_json_output(output):
     json_start = output.find('{')
@@ -32,7 +28,7 @@ def get_priviledged_predicates_str(predicates):
             if args:
                 name = pred
                 args = args
-                descr = preds_templates[str(name)].format(*args)
+                descr = PREDICATE_QUESTIONS[str(name)].format(*args)
                 priviledged_string += descr + "\n"
     priviledged_string = priviledged_string.strip()
     return priviledged_string
@@ -41,11 +37,12 @@ def get_priviledged_predicates_str(predicates):
 class DefaultVILAPolicy(Policy):
     """Default policy that reproduces the original VILA planning loop."""
 
-    def __init__(self, model, base_prompt, logger=None, **kwargs):
-        predicate_language = kwargs.get('predicate_language', preds_templates)
-        super().__init__(predicate_language=predicate_language)
+    def __init__(self, model, goal_string: str, logger=None, **kwargs):
+        super().__init__()
         self.model = model
-        self.base_prompt = base_prompt
+        self.base_prompt = load_prompt(BASE_PROMPT_FILE_PATH).replace(
+            "{goal_string}", goal_string
+        )
         self.logger = logger or get_logger()
 
     def _format_prompt(self, observation: PolicyObservation) -> str:

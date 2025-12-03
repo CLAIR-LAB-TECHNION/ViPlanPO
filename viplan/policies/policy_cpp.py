@@ -8,6 +8,7 @@
 
 import os
 import random
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 from logging import Logger
 
@@ -26,6 +27,7 @@ from .cpp_utils import (
     set_cp_initial_state_constraints_from_belief,
     extract_conformant_plan
 )
+from .natural_language_utils import PREDICATE_QUESTIONS, load_prompt
 from .policy_interface import Policy, PolicyObservation, PolicyAction
 from .policy_vila import DefaultVILAPolicy
 from .up_utils import (
@@ -37,35 +39,30 @@ from .up_utils import (
 )
 from ..models.custom_vqa.openai import OpenAIVQA, OPENAI_MODEL_ID_PREFIX
 
+BASE_PROMPT_FILE_PATH = Path("benchmark/igibson/prompt_po_all-BB.md")
 
-predicate_questions = {
-    'reachable': "Can the robot reach the {0} with its arm without moving its base?",
-    'holding':   "Is the robot currently holding the {0} in its gripper?",
-    'open':      "Is the {0} currently open?",
-    'ontop':     "Is the {0} resting on top of the {1}?",
-    'inside':    "Is the {0} located inside the {1}?",
-    'nextto':    "Is the {0} positioned next to the {1}?",
-}
 
 class PolicyCPP(Policy):
     def __init__(
         self,
-        predicate_language: Dict[str, str],
         domain_file: str,
         problem_file: str,
         model_name: str,
         model,
-        base_prompt: str,
         tasks_logger: Logger,
+        log_extra: Optional[Dict[str, Any]] = None,
         conformant_prob: float = 0.8,
         belief_update_weight: float = 0.5,
         blind_plan_execution: bool = True,
         use_unknown_token: bool = True,
         use_fd_constraints: bool = True,
         planner_timeout: Optional[float] = None,
+        goal_string: str = "",
         **vlm_inference_kwargs: Dict[str, Any]
     ):
-        super().__init__(predicate_language)
+        super().__init__()
+
+        base_prompt = load_prompt(BASE_PROMPT_FILE_PATH)
 
         # convert the classical problem into a ContingentProblem object that will
         # represent the conformant problem internally.
@@ -151,13 +148,27 @@ class PolicyCPP(Policy):
         self.base_prompt = base_prompt
         self.vlm_inference_kwargs = vlm_inference_kwargs
         self.task_logger = tasks_logger
-        with open('data/prompts/planning/vila_igibson_json.md', 'r') as f:
-            self.fallback_vila_policy = DefaultVILAPolicy(
-                model=model,
-                base_prompt=f.read(),
-                logger=self.task_logger,
-                predicate_language=predicate_language,
-            )
+        self.fallback_vila_policy = DefaultVILAPolicy(
+            model=model,
+            goal_string=goal_string,
+            logger=self.task_logger,
+        )
+        
+        # log all relevant initialization info
+        init_info = {
+            "n_used_fluents": f"{len(self.all_fluents)} / {len(get_all_grounded_predicates_for_objects(orig_problem))}",
+            "conformant_prob": self.conformant_prob,
+            "belief_update_weight": self.belief_update_weight,
+            "blind_plan_execution": self.blind_plan_execution,
+            "use_fd_constraints": self.use_fd_constraints,
+            "planner_timeout": self.planner_timeout,
+            "vlm_model_name": model_name,
+            "vlm_inference_kwargs": vlm_inference_kwargs,
+        }
+        self.task_logger.info(
+            "PolicyCPP initialized",
+            extra=log_extra | init_info
+        )
 
     def next_action(self, observation: PolicyObservation, log_extra: Dict[str, Any]) -> PolicyAction:
         # if the previous action was executed, step action in belief space
@@ -412,7 +423,7 @@ class PolicyCPP(Policy):
         
     def _format_prompt(self, fluent: FNode) -> str:
         fluent_name = fluent.fluent().name
-        fluent_prompt_template = self.predicate_language[fluent_name]
+        fluent_prompt_template = PREDICATE_QUESTIONS[fluent_name]
         fluent_prompt = fluent_prompt_template.format(*fluent.args)
         return fluent_prompt
     
