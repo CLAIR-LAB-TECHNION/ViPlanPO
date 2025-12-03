@@ -57,6 +57,7 @@ class PolicyCPP(Policy):
         model,
         base_prompt: str,
         tasks_logger: Logger,
+        log_extra: Optional[Dict[str, Any]] = None,
         conformant_prob: float = 0.8,
         belief_update_weight: float = 0.5,
         blind_plan_execution: bool = True,
@@ -158,6 +159,22 @@ class PolicyCPP(Policy):
                 logger=self.task_logger,
                 predicate_language=predicate_language,
             )
+        
+        # log all relevant initialization info
+        init_info = {
+            "n_used_fluents": f"{len(self.all_fluents)} / {len(get_all_grounded_predicates_for_objects(orig_problem))}",
+            "conformant_prob": self.conformant_prob,
+            "belief_update_weight": self.belief_update_weight,
+            "blind_plan_execution": self.blind_plan_execution,
+            "use_fd_constraints": self.use_fd_constraints,
+            "planner_timeout": self.planner_timeout,
+            "vlm_model_name": model_name,
+            "vlm_inference_kwargs": vlm_inference_kwargs,
+        }
+        self.task_logger.info(
+            "PolicyCPP initialized",
+            extra=log_extra | init_info
+        )
 
     def next_action(self, observation: PolicyObservation, log_extra: Dict[str, Any]) -> PolicyAction:
         # if the previous action was executed, step action in belief space
