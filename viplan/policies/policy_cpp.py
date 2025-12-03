@@ -26,7 +26,7 @@ from .cpp_utils import (
     set_cp_initial_state_constraints_from_belief,
     extract_conformant_plan
 )
-from .policy_interface import Policy, PolicyObservation, PolicyAction
+from .policy_interface import Policy, PolicyObservation, PolicyAction, PREDICATE_QUESTIONS
 from .policy_vila import DefaultVILAPolicy
 from .up_utils import (
     create_up_problem,
@@ -38,19 +38,9 @@ from .up_utils import (
 from ..models.custom_vqa.openai import OpenAIVQA, OPENAI_MODEL_ID_PREFIX
 
 
-predicate_questions = {
-    'reachable': "Can the robot reach the {0} with its arm without moving its base?",
-    'holding':   "Is the robot currently holding the {0} in its gripper?",
-    'open':      "Is the {0} currently open?",
-    'ontop':     "Is the {0} resting on top of the {1}?",
-    'inside':    "Is the {0} located inside the {1}?",
-    'nextto':    "Is the {0} positioned next to the {1}?",
-}
-
 class PolicyCPP(Policy):
     def __init__(
         self,
-        predicate_language: Dict[str, str],
         domain_file: str,
         problem_file: str,
         model_name: str,
@@ -66,7 +56,7 @@ class PolicyCPP(Policy):
         planner_timeout: Optional[float] = None,
         **vlm_inference_kwargs: Dict[str, Any]
     ):
-        super().__init__(predicate_language)
+        super().__init__()
 
         # convert the classical problem into a ContingentProblem object that will
         # represent the conformant problem internally.
@@ -429,7 +419,7 @@ class PolicyCPP(Policy):
         
     def _format_prompt(self, fluent: FNode) -> str:
         fluent_name = fluent.fluent().name
-        fluent_prompt_template = self.predicate_language[fluent_name]
+        fluent_prompt_template = PREDICATE_QUESTIONS[fluent_name]
         fluent_prompt = fluent_prompt_template.format(*fluent.args)
         return fluent_prompt
     

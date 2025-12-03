@@ -18,6 +18,17 @@ from typing import Any, Dict, Iterable, Mapping, Optional, Sequence, Type
 
 from unified_planning.model import Problem
 
+
+PREDICATE_QUESTIONS = {
+    'reachable': "Can the robot reach the {0} with its arm without moving its base?",
+    'holding':   "Is the robot currently holding the {0} in its gripper?",
+    'open':      "Is the {0} currently open?",
+    'ontop':     "Is the {0} resting on top of the {1}?",
+    'inside':    "Is the {0} located inside the {1}?",
+    'nextto':    "Is the {0} positioned next to the {1}?",
+}
+
+
 try:  # PIL is an optional dependency at import time.
     from PIL import Image
 except Exception:  # pragma: no cover - used only when PIL is not available.
@@ -29,7 +40,6 @@ class PolicyObservation:
 
     image: Optional[Image.Image]
     problem: Problem
-    predicate_language: Mapping[str, Any]
     predicate_groundings: Optional[Mapping[str, Any]] = None
     previous_actions: Iterable[Mapping[str, Any]] = field(default_factory=list)
     context: Mapping[str, Any] = field(default_factory=dict)
@@ -61,10 +71,8 @@ class Policy:
     :meth:`observe_outcome` to receive feedback from the environment.
     """
 
-    predicate_language: Mapping[str, Any]
-
-    def __init__(self, predicate_language: Optional[Mapping[str, Any]] = None):
-        self.predicate_language = predicate_language or {}
+    def __init__(self):
+        pass
 
     def reset(self, **_: Any) -> None:
         """Hook invoked whenever the environment is (re)initialised."""

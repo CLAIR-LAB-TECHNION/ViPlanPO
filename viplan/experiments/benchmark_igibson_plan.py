@@ -15,9 +15,9 @@ from viplan.code_helpers import get_logger, parse_output, get_unique_id
 from viplan.planning.planning_utils import get_plan, update_problem
 from viplan.policies.policy_interface import (
     PolicyObservation,
-    resolve_policy_class,
+    resolve_policy_class, PREDICATE_QUESTIONS,
 )
-from viplan.policies.policy_plan import DefaultPlanningPolicy, predicate_questions, get_questions, cast_to_yes_no, \
+from viplan.policies.policy_plan import DefaultPlanningPolicy, PREDICATE_QUESTIONS, get_questions, cast_to_yes_no, \
     update_vlm_state, check_action
 from viplan.log_utils import get_img_output_dir
 from viplan.planning.igibson_client_env import iGibsonClient
@@ -139,7 +139,7 @@ def check_plan(env,
     def instantiate_policy(current_plan):
         queue = deque(current_plan.actions)
         kwargs = dict(policy_kwargs or {})
-        kwargs.setdefault('predicate_language', predicate_questions)
+        kwargs.setdefault('predicate_language', PREDICATE_QUESTIONS)
         kwargs.setdefault('logger', logger)
         kwargs.setdefault('problem', problem)
         kwargs.setdefault('model', model)
@@ -477,7 +477,7 @@ def main(
     problem_files = [f"{problems_dir}/{problem}" for problem in problem_files]
     
     PolicyClass = resolve_policy_class(policy_cls, DefaultPlanningPolicy)
-    policy_kwargs = {'predicate_language': predicate_questions}
+    policy_kwargs = {'predicate_language': PREDICATE_QUESTIONS}
 
     for problem_file in problem_files:
         logger.info(f"Loading problem {problem_file}")

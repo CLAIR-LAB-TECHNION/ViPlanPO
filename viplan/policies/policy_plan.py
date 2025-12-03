@@ -3,14 +3,14 @@ from typing import Optional, Dict, Any
 
 from viplan.code_helpers import get_logger, parse_output
 from viplan.log_utils import save_vlm_question_images
-from viplan.policies.policy_interface import Policy, PolicyAction, PolicyObservation
+from viplan.policies.policy_interface import Policy, PolicyAction, PolicyObservation, PREDICATE_QUESTIONS
 
 
 class DefaultPlanningPolicy(Policy):
     """Default policy that sequentially executes planner actions."""
 
-    def __init__(self, action_queue, predicate_language, logger=None, **kwargs):
-        super().__init__(predicate_language=predicate_language)
+    def __init__(self, action_queue, logger=None, **kwargs):
+        super().__init__()
         self.action_queue = action_queue
         self.logger = logger or get_logger()
 
@@ -27,16 +27,6 @@ class DefaultPlanningPolicy(Policy):
         )
 
 
-predicate_questions = {
-    'reachable': "Is the {0} in reach of the agent?",
-    'holding':   "Is the agent holding the {0}?",
-    'open':      "Is the {0} open?",
-    'ontop':     "Is the {0} on top of the {1}?",
-    'inside':    "Is the {0} inside the {1}?",
-    'nextto':    "Is the {0} next to the {1}?",
-}
-
-
 def get_questions(predicates):
     questions = {}
     if isinstance(predicates, dict):
@@ -44,8 +34,8 @@ def get_questions(predicates):
             for args in predicates[predicate]:
                 key = predicate + " " + args
                 value = predicates[predicate][args]
-                if predicate in predicate_questions:
-                    questions[key] = (predicate_questions[predicate].format(*args.split(",")), value)
+                if predicate in PREDICATE_QUESTIONS:
+                    questions[key] = (PREDICATE_QUESTIONS[predicate].format(*args.split(",")), value)
                 else:
                     raise ValueError(f"Unknown predicate {predicate}")
     else:
@@ -54,8 +44,8 @@ def get_questions(predicates):
             predicate = key.split(" ")[0]
             value = pred[key]
             args = key.split(" ")[1].split(",")
-            if predicate in predicate_questions:
-                questions[predicate + " " + ",".join(args)] = (predicate_questions[predicate].format(*args), value)
+            if predicate in PREDICATE_QUESTIONS:
+                questions[predicate + " " + ",".join(args)] = (PREDICATE_QUESTIONS[predicate].format(*args), value)
             else:
                 raise ValueError(f"Unknown predicate {predicate}")
 
