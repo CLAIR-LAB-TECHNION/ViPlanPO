@@ -128,7 +128,6 @@ def planning_loop(
         observation = PolicyObservation(
             image=img,
             problem=problem,
-            predicate_language=policy.predicate_language,
             predicate_groundings=env.priviledged_predicates if use_predicate_groundings else None,
             previous_actions=previous_actions,
             context={'step': step},
@@ -350,6 +349,7 @@ def main(
                     model_name=model_name,
                     goal_string=goal_string,
                     tasks_logger=tasks_logger,
+                    log_extra=log_extra,
                     logger=logger,
                     problem=problem,
                 )
