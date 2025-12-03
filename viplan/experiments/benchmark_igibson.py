@@ -27,7 +27,7 @@ from viplan.policies.policy_interface import (
 )
 
 from viplan.policies.policy_plan import DefaultPlanningPolicy
-from viplan.policies.policy_vila import DefaultVILAPolicy, preds_templates
+from viplan.policies.policy_vila import DefaultVILAPolicy
 from viplan.policies.policy_cpp import PolicyCPP
 
 goal_templates = {
@@ -345,12 +345,10 @@ def main(
                 action_queue = deque()
                 policy = PolicyCls(
                     action_queue=action_queue,
-                    predicate_language=preds_templates,
                     logger=logger,
                 )
             else:
                 policy = PolicyCls(
-                    predicate_language=preds_templates,
                     domain_file=domain_file,
                     problem_file=problem_file,
                     model=model,
