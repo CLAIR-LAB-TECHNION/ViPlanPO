@@ -294,7 +294,12 @@ class PolicyCPP(Policy):
 
         # accumulate probability mass until reaching threshold
         total_prob = 0.0
-        for state_str, prob in enumerate_states_by_probability(self.factored_belief):
+        state_gen = enumerate_states_by_probability(self.factored_belief) 
+        while total_prob < self.conformant_prob:
+            try:
+                state_str, prob = next(state_gen)
+            except StopIteration:
+                break  
             # turn state string into a dict representation
             state = {
                 fluent: (state_str[i] == '1')
