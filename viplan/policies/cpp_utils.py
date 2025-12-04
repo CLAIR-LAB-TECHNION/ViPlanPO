@@ -4,9 +4,89 @@ from typing import List, Dict, Generator, Tuple, Iterable
 from unified_planning.shortcuts import *
 from unified_planning.model import ContingentProblem
 
+from .up_utils import has_quantifiers
+
+
+
+def expand_quantifiers(problem: Problem, expr: FNode) -> FNode:
+    # Very simplified: only handles Forall over a single variable v of some type T
+    # and assumes the body has no *nested* quantifiers.
+    env = problem.environment
+    em = env.expression_manager
+
+    if expr.is_forall():
+        vars = expr.variables()           # <-- NOTE: variables() is a *method*
+        assert len(vars) == 1, "helper currently only supports one quantified var"
+        v = vars[0]
+        body = expr.arg(0)
+
+        objs = list(problem.objects(v.type))
+        if not objs:
+            # Forall over empty domain is True
+            return em.TRUE()
+
+        grounded_bodies = []
+        for o in objs:
+            # substitute v with object o; both are valid 'Expression's
+            grounded = body.substitute({v: o})
+            grounded_bodies.append(expand_quantifiers(problem, grounded))
+
+        return em.And(grounded_bodies)
+
+    # ---------- EXISTS ----------
+    if expr.is_exists():
+        vars = expr.variables()
+        assert len(vars) == 1, "helper currently only supports one quantified var"
+        v = vars[0]
+        body = expr.arg(0)
+
+        objs = list(problem.objects(v.type))
+        if not objs:
+            # Exists over empty domain is False
+            return em.FALSE()
+
+        grounded_bodies = []
+        for o in objs:
+            grounded = body.substitute({v: o})
+            grounded_bodies.append(expand_quantifiers(grounded))
+
+        return em.Or(grounded_bodies)
+
+    # ---------- IMPLIES -> OR/NOT (to keep preconditions simple) ----------
+    if expr.is_implies():
+        left = expand_quantifiers(expr.arg(0))
+        right = expand_quantifiers(expr.arg(1))
+        return em.Or(em.Not(left), right)
+
+    # ---------- BOOLEAN CONNECTIVES ----------
+    if expr.is_and():
+        return em.And([expand_quantifiers(problem, c) for c in expr.args])
+
+    if expr.is_or():
+        return em.Or([expand_quantifiers(problem, c) for c in expr.args])
+
+    if expr.is_not():
+        return em.Not(expand_quantifiers(problem, expr.arg(0)))
+
+    # ---------- LEAF / OTHER NODES ----------
+    return expr
+
+def compile_precondition_quatifiers(problem: Problem) -> Problem:
+    problem = problem.clone()
+    for a in problem.actions:
+        new_pres = [expand_quantifiers(problem, p) for p in a.preconditions]
+        a.clear_preconditions()
+        for p in new_pres:
+            a.add_precondition(p)
+    
+    return problem
+
 
 def _do_required_compilations(problem: Problem) -> Problem:
     if problem.kind.has_universal_conditions():
+        print('removing quantifiers in preconditions...')
+        problem = compile_precondition_quatifiers(problem)
+    if has_quantifiers(problem):
         print('removing quantifiers...')
         with Compiler(problem_kind=problem.kind,
                     compilation_kind=CompilationKind.QUANTIFIERS_REMOVING) as compiler:
