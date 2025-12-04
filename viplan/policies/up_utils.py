@@ -26,6 +26,12 @@ from unified_planning.engines.sequential_simulator import UPSequentialSimulator
 from unified_planning.plans.plan import ActionInstance
 
 
+def has_quantifiers(problem: Problem) -> bool:
+    if 'forall' in str(problem).lower() or 'exists' in str(problem).lower():
+        return True
+    return False
+
+
 def create_up_problem(domain: str, problem: str) -> Problem:
     """Create a Unified Planning problem from PDDL files or strings.
     
