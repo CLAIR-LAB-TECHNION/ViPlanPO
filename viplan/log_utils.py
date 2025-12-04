@@ -94,6 +94,8 @@ def get_task_logger(out_dir : os.PathLike, unique_id: str):
     max_bytes = 1024 * 1024  # 1 MB in bytes
     backup_count = 5  # Keep 5 backup files (app_size_rotated.log.1, .2, etc.)
 
+    os.makedirs(out_dir, exist_ok=True)
+
     handler = RotatingFileHandler(
         filename=log_file_path,
         mode='a',
