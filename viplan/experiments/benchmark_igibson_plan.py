@@ -188,7 +188,8 @@ def check_plan(env,
         logger.info(f"Applying action {action}")
 
         try:
-            action_correct, preconditions_results, non_visible_precond_results, effects_results, action_state_correct, action_info = check_action(env, action, vlm_state, model, base_prompt, logger, img_log_info, text_only=text_only)
+            action_correct, preconditions_results, non_visible_precond_results, effects_results, action_state_correct, action_info = check_action(
+                env, action, vlm_state, model, logger, text_only=text_only)
         except Exception as e:
             logger.warning(f"Error while checking action {action}: {e}")
             import traceback
