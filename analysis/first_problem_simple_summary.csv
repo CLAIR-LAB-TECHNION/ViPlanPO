@@ -1,0 +1,5 @@
+,Simple,Simple,Simple,Simple
+,Success rate,Avg. Steps,Avg. Replans,Avg. time
+policy_cls,,,,
+ViLaPolicy,0.4,6.8,0.0,56.393976354599
+PolicyCPP,0.6,6.8,7.0,237.75315256118773
