@@ -19,7 +19,10 @@ The ViPlan benchmark is made up of several components, including the main experi
 
 ### Experiments
 
-To run the experiments, you need to install the required packages. We recommend using mamba and provide an environment file for easy installation. The virtual environment requirements can be found at `environment.yml`, and it can be created as prefered. Here we report examples using `mamba`.
+To run the experiments, you need to install the required packages. We recommend using mamba and provide an environment file for easy installation. The virtual environment requirements can be found at `environment.yml`, and it can be created as preferred. Here we report examples using `mamba`.
+
+[Installing mamba](https://mamba.readthedocs.io/en/latest/installation/micromamba-installation.html)
+
 Using `mamba`:
 
 ```bash
