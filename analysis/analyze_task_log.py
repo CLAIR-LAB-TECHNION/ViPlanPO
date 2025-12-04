@@ -110,7 +110,7 @@ def summarize_first_problem(table: pd.DataFrame) -> pd.DataFrame:
 
 def main() -> None:
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-    log_paths = list(LOG_DIR.glob("*.jsonl"))
+    log_paths = list(LOG_DIR.glob("*.log"))
     df = _load_logs(log_paths)
     if df.empty:
         print("No log files found in", LOG_DIR)
