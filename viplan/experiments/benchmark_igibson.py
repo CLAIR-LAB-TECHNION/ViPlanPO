@@ -322,7 +322,7 @@ def main(
             goal_string = get_goal_str(env)
             logger.info(f"Goal: {goal_string}")
 
-            img_output_dir = get_img_output_dir('vila', instance_id, scene_id, task)
+            img_output_dir = get_img_output_dir(policy_cls, instance_id, scene_id, task)
 
             log_extra = {
                 'problem_file': problem_file,
