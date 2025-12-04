@@ -2,8 +2,11 @@ import copy
 from pathlib import Path
 from typing import Optional, Dict, Any
 
+from unified_planning.shortcuts import up
+
 from viplan.code_helpers import get_logger, parse_output
 from viplan.log_utils import save_vlm_question_images
+from viplan.planning.planning_utils import get_plan
 from viplan.policies.natural_language_utils import PREDICATE_QUESTIONS, load_prompt
 from viplan.policies.policy_interface import Policy, PolicyAction, PolicyObservation
 
@@ -11,17 +14,84 @@ from viplan.policies.policy_interface import Policy, PolicyAction, PolicyObserva
 class DefaultPlanningPolicy(Policy):
     """Default policy that sequentially executes planner actions."""
 
-    def __init__(self, action_queue, logger=None, **kwargs):
+    def __init__(
+            self,
+            logger,
+            problem,
+            **kwargs
+    ):
         super().__init__()
-        self.action_queue = action_queue
-        self.logger = logger or get_logger()
+        plan_result = get_plan(problem, logger)
+        if plan_result is None:
+            logger.warning('Breaking out of episode due to error in the planner')
+        elif plan_result.status != up.engines.PlanGenerationResultStatus.SOLVED_SATISFICING:
+            logger.warning('No plan found after replanning')
+        else:
+            logger.info('Replan found')
+        self.plan = plan_result.plan
+        self.action_queue = self.plan.action_queue
+        self.logger = logger
 
     def next_action(self, observation: PolicyObservation, log_extra: Dict[str, Any]) -> Optional[PolicyAction]:
-        if not self.action_queue:
+        logger = self.logger
+
+        if self.action_queue.empty():
             return None
-        action = self.action_queue.popleft()
-        if self.logger:
-            self.logger.debug(f"Policy selecting action {action}")
+
+        env = observation.env
+
+        # === Consider last action ===
+        if observation.previous_actions:
+            legal = observation.previous_actions[-1]['success']
+        else:
+            legal = True
+
+        if not legal:
+            logger.warning("Action was not legal")
+            return None
+
+        effects_results, vlm_state = check_effects(env, vlm_state, effects, grounded_params, model, base_prompt,
+                                                   previous_state, logger, img_log_info, text_only=text_only)
+        vlm_state, changed = update_vlm_state(vlm_state, effects_results)
+        if len(changed) > 0:
+            logger.debug("VLM state changed after effects:", changed)
+
+        precond_all_correct = preconditions_results['all_correct'] if 'all_correct' in preconditions_results else True
+        effects_all_correct = effects_results['all_correct'] if 'all_correct' in effects_results else True
+        all_correct = precond_all_correct and effects_all_correct
+
+        # Effects state correct can be different from all_correct if there was a failure in the environment and the VLM detected it
+        precond_state_correct = preconditions_results[
+            'all_state_correct'] if 'all_state_correct' in preconditions_results else True
+        effects_state_correct = effects_results['all_state_correct'] if 'all_state_correct' in effects_results else True
+        all_state_correct = precond_state_correct and effects_state_correct
+
+        # === Prepare for next action ===
+        preconditions = action.action.preconditions
+        effects = action.action.effects
+        grounded_params = {param.name: str(value) for param, value in
+                           zip(action.action.parameters, action.actual_parameters)}
+        previous_state = copy.deepcopy(env.state)
+        logger.info("Environment state before action\n" + str(env))
+
+        preconditions_results, non_visible_precond_results = check_preconditions(env, preconditions, grounded_params,
+                                                                                 model, base_prompt, logger,
+                                                                                 text_only=text_only,
+                                                                                 img_log_info=img_log_info)
+        if not non_visible_precond_results['all_correct']:
+            logger.warning("Non visible preconditions not satisfied")
+            return False, non_visible_precond_results, None, False, None  # TODO return both precond results later on
+
+        vlm_state, changed = update_vlm_state(vlm_state, preconditions_results)
+        if len(changed) > 0:
+            logger.debug("VLM state changed after preconditions:", changed)
+
+        # If the preconditions are not satisfied according to the PDDL model, the action can not be taken
+        if 'all_correct' in preconditions_results and not preconditions_results['all_correct']:
+            logger.warning("Preconditions not satisfied")
+            return False, preconditions_results, non_visible_precond_results, None, False, None
+
+        self.logger.debug(f"Policy selecting action {action}")
         return PolicyAction(
             name=action.action.name,
             parameters=[str(p) for p in action.actual_parameters],
@@ -210,7 +280,7 @@ DEFAULT_PLAN_PROMPT_PATH = Path("benchmark/igibson/prompt_po_all-BB.md")
 DEFAULT_PLAN_PROMPT = load_prompt(DEFAULT_PLAN_PROMPT_PATH)
 
 
-def ask_vlm(questions, image, model, base_prompt, logger, env, img_log_info, check_type=None, **kwargs):
+def ask_vlm(questions, image, model, base_prompt, logger, img_log_info, check_type=None, **kwargs):
     base_prompt = load_prompt(base_prompt)
     prompts = [base_prompt + q[0] for q in questions.values()]
     images = [image for _ in questions]
@@ -238,21 +308,7 @@ def ask_vlm(questions, image, model, base_prompt, logger, env, img_log_info, che
         # Answer match = the answer is what the PDDL model would expect -> if false, then replan
         answer_match = parsed_answer == 'yes' if questions[key][1] else parsed_answer == 'no'
 
-        # State match = the answer is what is actually true in the environment
-        # Can differ from PDDL if the action failed in the environment and the model correctly notices
-        # e.g. block is dropped in the wrong column, PDDL expects it to be in the correct column but the model sees it dropped
-        # -> state match is used to compute action accuracy, as it is the metric checking the model's actual performance
-
-        predicate, args = key.split(" ")
-        state_value = env.state[predicate][args]
-        if (state_value and parsed_answer == 'yes') or (not state_value and parsed_answer == 'no'):
-            state_match = True
-        else:
-            state_match = False
-        logger.info(f"Actual predicate value: {predicate} {args} = {state_value}, model answer: {parsed_answer}, state match: {state_match}")
-        logger.info(f"PDDL expected value: {predicate} {args} = {questions[key][1]}, model answer: {parsed_answer}, answer match: {answer_match}")
-
-        results[key] = (parsed_answer, yes_prob, no_prob, parsed_explanation, answer_match, original_output, state_match)
+        results[key] = (parsed_answer, yes_prob, no_prob, parsed_explanation, answer_match, original_output, True)
 
     # All correct = all predicates are correct according to the PDDL model -> no replan needed
     # State match can only be used for metrics -> in the real world, the ground truth is not known
@@ -294,7 +350,8 @@ def get_question_preds(predicates, visible_preds):
     return question_preds, non_visible_preds
 
 
-def check_preconditions(env, vlm_state, preconditions, grounded_args, model, base_prompt=DEFAULT_PLAN_PROMPT, logger=None, text_only=False, img_log_info=None):
+def check_preconditions(env, preconditions, grounded_args, model, base_prompt=DEFAULT_PLAN_PROMPT, logger=None,
+                        text_only=False, img_log_info=None):
     precondition_preds = get_preconditions_predicates(env, preconditions, grounded_args)
     logger.debug(f"Precondition predicates: {precondition_preds}")
     visible_preds = env.visible_predicates
@@ -311,7 +368,8 @@ def check_preconditions(env, vlm_state, preconditions, grounded_args, model, bas
             logger.warning("No questions to ask VLM")
             results = {}
         else:
-            results = ask_vlm(questions, env.render(), model, base_prompt, logger, env, img_log_info, check_type='precondition')
+            results = ask_vlm(questions, env.render(), model, base_prompt, logger, img_log_info,
+                              check_type='precondition')
             logger.debug(f"Precondition VLM results: {results}")
 
     # Check non visible predicates against vlm_state
@@ -348,7 +406,7 @@ def check_effects(env, vlm_state, effects, grounded_args, model, base_prompt=DEF
             logger.warning("No questions to ask VLM")
             results = {}
         else:
-            results = ask_vlm(questions, env.render(), model, base_prompt, logger, env, img_log_info, check_type='effect')
+            results = ask_vlm(questions, env.render(), model, base_prompt, logger, img_log_info, check_type='effect')
 
     # Update vlm_state with non visible preds using the PDDL expected value
     updated_non_visible_preds = {}
@@ -372,7 +430,9 @@ def check_action(env, action, vlm_state, model, base_prompt=DEFAULT_PLAN_PROMPT,
     previous_state = copy.deepcopy(env.state)
     logger.info("Environment state before action\n" + str(env))
 
-    preconditions_results, non_visible_precond_results = check_preconditions(env, vlm_state, preconditions, grounded_params, model, base_prompt, logger, text_only=text_only, img_log_info=img_log_info)
+    preconditions_results, non_visible_precond_results = check_preconditions(env, preconditions, grounded_params, model,
+                                                                             base_prompt, logger, text_only=text_only,
+                                                                             img_log_info=img_log_info)
     if not non_visible_precond_results['all_correct']:
         logger.warning("Non visible preconditions not satisfied")
         return False, non_visible_precond_results, None, False, None # TODO return both precond results later on

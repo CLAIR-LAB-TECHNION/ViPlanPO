@@ -128,6 +128,7 @@ def planning_loop(
         observation = PolicyObservation(
             image=img,
             problem=problem,
+            env=env,
             predicate_groundings=env.priviledged_predicates if use_predicate_groundings else None,
             previous_actions=previous_actions,
             context={'step': step},
@@ -335,24 +336,17 @@ def main(
                 'img_output_dir': img_output_dir,
             }
 
-            if issubclass(PolicyCls, DefaultPlanningPolicy):
-                action_queue = deque()
-                policy = PolicyCls(
-                    action_queue=action_queue,
-                    logger=logger,
-                )
-            else:
-                policy = PolicyCls(
-                    domain_file=domain_file,
-                    problem_file=problem_file,
-                    model=model,
-                    model_name=model_name,
-                    goal_string=goal_string,
-                    tasks_logger=tasks_logger,
-                    log_extra=log_extra,
-                    logger=logger,
-                    problem=problem,
-                )
+            policy = PolicyCls(
+                domain_file=domain_file,
+                problem_file=problem_file,
+                model=model,
+                model_name=model_name,
+                goal_string=goal_string,
+                tasks_logger=tasks_logger,
+                log_extra=log_extra,
+                logger=logger,
+                problem=problem,
+            )
 
             # Run planning loop
             logger.info("Starting planning loop...")

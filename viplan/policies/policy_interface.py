@@ -18,6 +18,7 @@ from typing import Any, Dict, Iterable, Mapping, Optional, Sequence, Type
 
 from unified_planning.model import Problem
 
+from viplan.planning.igibson_client_env import iGibsonClient
 
 try:  # PIL is an optional dependency at import time.
     from PIL import Image
@@ -30,6 +31,7 @@ class PolicyObservation:
 
     image: Optional[Image.Image]
     problem: Problem
+    env: iGibsonClient = field()
     predicate_groundings: Optional[Mapping[str, Any]] = None
     previous_actions: Iterable[Mapping[str, Any]] = field(default_factory=list)
     context: Mapping[str, Any] = field(default_factory=dict)
