@@ -307,7 +307,7 @@ def extract_conformant_plan(p_planNode):
 
 @pytest.mark.parametrize("domain_file,problem_file",
                          product(ALL_DOMAIN_FILES, ALL_PROBLEM_FILES))
-def test_as_classical_orig_domain(domain_file, problem_file):
+def test_as_classical_and_small_sets(domain_file, problem_file):
     problem = create_up_problem(domain_file, problem_file)
 
     ground_predicates = get_all_grounded_predicates_for_objects(problem)
@@ -331,6 +331,7 @@ def test_as_classical_orig_domain(domain_file, problem_file):
     with OneshotPlanner(name="MetaCPORPlanning[fast-downward]") as planner:
         result = planner.solve(cp)
         print(result)
+        assert result.plan is not None, f"Planner returned no plan for problem:\n{cp}"
         conformant_plan = extract_conformant_plan(result.plan.root_node)
 
     orig_problem = create_up_problem(domain_file, problem_file)
@@ -344,7 +345,9 @@ def test_as_classical_orig_domain(domain_file, problem_file):
     cur_state = sim.get_initial_state()
     for a in action_seq_orig_problem:
         print("Applying action:", a)
-        cur_state = sim.apply(cur_state, a)
+        new_state = sim.apply(cur_state, a)
+        assert new_state is not None, f"Action {a} is not applicable in state {cur_state}"
+        cur_state = new_state
 
     assert sim.is_goal(cur_state), "didn't reach the goal!"
 
@@ -363,6 +366,7 @@ def test_as_classical_orig_domain(domain_file, problem_file):
     with OneshotPlanner(name="MetaCPORPlanning[fast-downward]") as planner:
         result = planner.solve(cp)
         print(result)
+        assert result.plan is not None, f"Planner returned no plan for problem:\n{cp}"
         conformant_plan = extract_conformant_plan(result.plan.root_node)
 
     cur_state = sim.get_initial_state()
@@ -394,7 +398,7 @@ def test_subsets_of_initial_states(subset):
     with OneshotPlanner(name="MetaCPORPlanning[fast-downward]") as planner:
         result = planner.solve(cp)
         print(result)
-        assert result is not None, f"Planner returned no plan found for subset:\n{subset}\n\nproblem definition:\n{cp}"
+        assert result.plan is not None, f"Planner returned no plan for subset:\n{subset}\n\nproblem definition:\n{cp}"
         conformant_plan = extract_conformant_plan(result.plan.root_node)
     
     orig_problem = create_up_problem(DOMAIN_FILE_COND, PROBLEM_FILE_DRAWERS_SIMPLE)
