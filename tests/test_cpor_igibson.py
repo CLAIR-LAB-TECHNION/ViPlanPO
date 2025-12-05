@@ -394,6 +394,7 @@ def test_subsets_of_initial_states(subset):
     with OneshotPlanner(name="MetaCPORPlanning[fast-downward]") as planner:
         result = planner.solve(cp)
         print(result)
+        assert result is not None, f"Planner returned no plan found for subset:\n{subset}\n\nproblem definition:\n{cp}"
         conformant_plan = extract_conformant_plan(result.plan.root_node)
     
     orig_problem = create_up_problem(DOMAIN_FILE_COND, PROBLEM_FILE_DRAWERS_SIMPLE)
