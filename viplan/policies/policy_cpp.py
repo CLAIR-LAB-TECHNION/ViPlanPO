@@ -49,6 +49,7 @@ class PolicyCPP(Policy):
         problem_file: str,
         model_name: str,
         model,
+        logger: Logger,
         tasks_logger: Logger,
         log_extra: Optional[Dict[str, Any]] = None,
         conformant_prob: float = 0.8,
@@ -147,11 +148,12 @@ class PolicyCPP(Policy):
         self.blind_plan_execution = blind_plan_execution
         self.base_prompt = base_prompt
         self.vlm_inference_kwargs = vlm_inference_kwargs
+        self.logger = logger
         self.task_logger = tasks_logger
         self.fallback_vila_policy = DefaultVILAPolicy(
             model=model,
             goal_string=goal_string,
-            logger=self.task_logger,
+            logger=self.logger,
         )
         
         # log all relevant initialization info

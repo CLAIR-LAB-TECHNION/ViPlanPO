@@ -37,13 +37,14 @@ def get_priviledged_predicates_str(predicates):
 class DefaultVILAPolicy(Policy):
     """Default policy that reproduces the original VILA planning loop."""
 
-    def __init__(self, model, goal_string: str, logger=None, **kwargs):
+    def __init__(self, model, goal_string: str, logger=None, tasks_logger=None, **kwargs):
         super().__init__()
         self.model = model
         self.base_prompt = load_prompt(BASE_PROMPT_FILE_PATH).replace(
             "{goal_string}", goal_string
         )
         self.logger = logger or get_logger()
+        self.tasks_logger = tasks_logger
 
     def _format_prompt(self, observation: PolicyObservation) -> str:
         prompt = self.base_prompt.replace(
@@ -77,6 +78,8 @@ class DefaultVILAPolicy(Policy):
         vlm_plan = parse_json_output(outputs[0])
         if 'plan' not in vlm_plan or not vlm_plan['plan']:
             return None
+        log_extra['plan'] = vlm_plan['plan']
+        self.tasks_logger.info(f'Got VLM plan', log_extra)
         first_action = vlm_plan['plan'][0]
         action_params = [str(p) for p in first_action['parameters']]
         return PolicyAction(
