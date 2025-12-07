@@ -397,7 +397,9 @@ def test_as_classical_and_small_sets(domain_file, problem_file):
     assert sim.is_goal(cur_state), "didn't reach the goal!"
 
 
-@pytest.mark.parametrize('subset', list(powerset(DRAWERS_POSSIBLE_STATES_STR))[:200])
+@pytest.mark.parametrize('subset',
+                         list(powerset(DRAWERS_POSSIBLE_STATES_STR))[:200] + 
+                         list(powerset(DRAWERS_POSSIBLE_STATES_STR))[-200:])
 def test_subsets_of_initial_states(subset):
     problem = create_up_problem(DOMAIN_FILE_COND, PROBLEM_FILE_DRAWERS_SIMPLE)
 
