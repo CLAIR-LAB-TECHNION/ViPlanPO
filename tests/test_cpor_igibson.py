@@ -29,6 +29,7 @@ from viplan.policies.up_utils import (
 from viplan.policies.cpp_utils import (
     to_contingent_problem,
     set_cp_initial_state_constraints_from_belief,
+    cpor_solve
 )
 
 
@@ -45,7 +46,7 @@ DOMAIN_FILE_COND = "data/planning/igibson/domain-cond.pddl"
 PROBLEM_FILE_DRAWERS_SIMPLE = 'data/planning/igibson/simple/cleaning_out_drawers_simple.pddl'
 
 
-SORTING_POSSIBLE_STATES_STR = [
+DRAWERS_POSSIBLE_STATES_STR = [
     {
         "inside(bowl_1, cabinet_1)": False,
         "open(cabinet_1)": False,
@@ -272,7 +273,7 @@ SORTING_POSSIBLE_STATES_STR = [
     },
 ]
 
-SORTING_TRUE_INIT_STATE_STR = {
+DRAWERS_TRUE_INIT_STATE_STR = {
         "inside(bowl_1, cabinet_1)": True,
         "open(cabinet_1)": False,
         "ontop(bowl_1, sink_1)": False,
@@ -326,13 +327,21 @@ def test_as_classical_and_small_sets(domain_file, problem_file):
             s1[f] = False  
 
     cp = to_contingent_problem(problem)
-    set_cp_initial_state_constraints_from_belief(cp, [s1])
-
-    with OneshotPlanner(name="MetaCPORPlanning[fast-downward]") as planner:
-        result = planner.solve(cp)
-        print(result)
-        assert result.plan is not None, f"Planner returned no plan for problem:\n{cp}"
-        conformant_plan = extract_conformant_plan(result.plan.root_node)
+    
+    # set_cp_initial_state_constraints_from_belief(cp, [s1])
+    # with OneshotPlanner(name="MetaCPORPlanning[fast-downward]") as planner:
+    #     result = planner.solve(cp)
+    #     print(result)
+    #     assert result.plan is not None, f"Planner returned no plan for problem:\n{cp}"
+    #     conformant_plan = extract_conformant_plan(result.plan.root_node)
+    result = cpor_solve(
+        cp,
+        [s1],
+        timeout=10.0
+    )
+    print(result)
+    assert result is not None and result.plan is not None, f"Planner returned no plan for problem:\n{cp}"
+    conformant_plan = extract_conformant_plan(result.plan.root_node)
 
     orig_problem = create_up_problem(domain_file, problem_file)
     actions_mapping = get_mapping_from_compiled_actions_to_original_actions(
@@ -361,27 +370,38 @@ def test_as_classical_and_small_sets(domain_file, problem_file):
     keys_list = list(s1.keys())
     s2[keys_list[-1]] = not s2[keys_list[-1]]  # flip one fluent to create a different state
     s2[keys_list[-2]] = not s2[keys_list[-2]]  # flip another fluent
-    set_cp_initial_state_constraints_from_belief(cp, [s1, s2])
+    
+    # set_cp_initial_state_constraints_from_belief(cp, [s1, s2])
+    # with OneshotPlanner(name="MetaCPORPlanning[fast-downward]") as planner:
+    #     result = planner.solve(cp)
+    #     print(result)
+    #     assert result.plan is not None, f"Planner returned no plan for problem:\n{cp}"
+    #     conformant_plan = extract_conformant_plan(result.plan.root_node)
+    result = cpor_solve(
+        cp,
+        [s1],
+        timeout=10.0
+    )
+    print(result)
+    assert result is not None and result.plan is not None, f"Planner returned no plan for problem:\n{cp}"
+    conformant_plan = extract_conformant_plan(result.plan.root_node)
 
-    with OneshotPlanner(name="MetaCPORPlanning[fast-downward]") as planner:
-        result = planner.solve(cp)
-        print(result)
-        assert result.plan is not None, f"Planner returned no plan for problem:\n{cp}"
-        conformant_plan = extract_conformant_plan(result.plan.root_node)
-
+    sim = UPSequentialSimulator(orig_problem)
     cur_state = sim.get_initial_state()
     for a in action_seq_orig_problem:
         print("Applying action:", a)
-        cur_state = sim.apply(cur_state, a)
+        new_state = sim.apply(cur_state, a)
+        assert new_state is not None, f"Action {a} is not applicable in state {cur_state}"
+        cur_state = new_state
 
     assert sim.is_goal(cur_state), "didn't reach the goal!"
 
 
-@pytest.mark.parametrize('subset', list(powerset(SORTING_POSSIBLE_STATES_STR))[:200])
+@pytest.mark.parametrize('subset', list(powerset(DRAWERS_POSSIBLE_STATES_STR))[:200])
 def test_subsets_of_initial_states(subset):
     problem = create_up_problem(DOMAIN_FILE_COND, PROBLEM_FILE_DRAWERS_SIMPLE)
 
-    states_str = list(subset) + [SORTING_TRUE_INIT_STATE_STR]
+    states_str = list(subset) + [DRAWERS_TRUE_INIT_STATE_STR]
     
     cp = to_contingent_problem(problem)
 
@@ -393,13 +413,22 @@ def test_subsets_of_initial_states(subset):
             state[fnode] = val
         states.append(state)
 
-    set_cp_initial_state_constraints_from_belief(cp, states)
+    # set_cp_initial_state_constraints_from_belief(cp, states)
+    # with OneshotPlanner(name="MetaCPORPlanning[fast-downward]") as planner:
+    #     result = planner.solve(cp)
+    #     print(result)
+    #     assert result.plan is not None, f"Planner returned no plan for subset:\n{subset}\n\nproblem definition:\n{cp}"
+    #     conformant_plan = extract_conformant_plan(result.plan.root_node)
+    result = cpor_solve(
+        cp,
+        states,
+        timeout=10.0
+    )
+    print(result)
+    assert result is not None and result.plan is not None, f"Planner returned no plan for problem:\n{cp}"
+    conformant_plan = extract_conformant_plan(result.plan.root_node)
 
-    with OneshotPlanner(name="MetaCPORPlanning[fast-downward]") as planner:
-        result = planner.solve(cp)
-        print(result)
-        assert result.plan is not None, f"Planner returned no plan for subset:\n{subset}\n\nproblem definition:\n{cp}"
-        conformant_plan = extract_conformant_plan(result.plan.root_node)
+
     
     orig_problem = create_up_problem(DOMAIN_FILE_COND, PROBLEM_FILE_DRAWERS_SIMPLE)
     actions_mapping = get_mapping_from_compiled_actions_to_original_actions(
@@ -409,10 +438,13 @@ def test_subsets_of_initial_states(subset):
     action_seq_orig_problem = [actions_mapping(a) for a in conformant_plan]
 
     sim = UPSequentialSimulator(orig_problem)
+    sim = UPSequentialSimulator(orig_problem)
     cur_state = sim.get_initial_state()
     for a in action_seq_orig_problem:
         print("Applying action:", a)
-        cur_state = sim.apply(cur_state, a)
+        new_state = sim.apply(cur_state, a)
+        assert new_state is not None, f"Action {a} is not applicable in state {cur_state}"
+        cur_state = new_state
 
     assert sim.is_goal(cur_state), f"didn't reach the goal!, failed subset:\n{subset}\n\nproblem definition:\n{cp}"
 

@@ -3,6 +3,7 @@ from typing import List, Dict, Generator, Tuple, Iterable
 
 from unified_planning.shortcuts import *
 from unified_planning.model import ContingentProblem
+from unified_planning.engines.results import PlanGenerationResultStatus
 
 from .up_utils import has_quantifiers
 
@@ -133,20 +134,26 @@ def to_contingent_problem(problem: Problem) -> ContingentProblem:
 
 def set_cp_initial_state_constraints_from_belief(
         problem: ContingentProblem,
-        possible_init_states: Iterable[Dict[FNode, bool]]
+        possible_init_states: Iterable[Dict[FNode, bool]],
+        version: int = 0,
 ) -> None:
     # clear existing initial state
     problem._initial_value.clear()
     problem._or_initial_constraints.clear()
     problem._oneof_initial_constraints.clear()
 
-    # set all known fluents
-    unknown_fluents = set()
-    for f, v in possible_init_states[0].items():
-        if all(v == s.get(f, None) for s in possible_init_states):
-            problem.set_initial_value(f, v)
-        else:
-            unknown_fluents.add(f)
+    if version == 0:
+        # set all known fluents
+        unknown_fluents = set()
+        for f, v in possible_init_states[0].items():
+            if all(v == s.get(f, None) for s in possible_init_states):
+                problem.set_initial_value(f, v)
+            else:
+                unknown_fluents.add(f)
+    elif version == 1:
+        unknown_fluents = list(possible_init_states[0].keys())
+    else:
+        raise ValueError(f"Unknown version {version} for setting initial state constraints")
 
     # Encode as a disjunction of full-state conjunctions
     # only include fluents with unknown values
@@ -168,6 +175,45 @@ def extract_conformant_plan(p_planNode):
         else:
             p_planNode = None
     return out
+
+
+def cpor_solve(problem: ContingentProblem,
+               possible_init_states: Iterable[Dict[FNode, bool]],
+               timeout: float,
+               task_logger = None,
+               log_plan_extra: Dict[str, str] = None):
+    
+    for i in range(2):
+        # set initial state constraints in the contingent problem
+        # based on all states selected so far.
+        set_cp_initial_state_constraints_from_belief(
+            problem,
+            possible_init_states,
+            version=i
+        )
+
+        # try to find a conformant plan for the largest belief set
+        plan_res = None
+        try:
+            with OneshotPlanner(name="MetaCPORPlanning[fast-downward]") as planner:
+                print(f'attempting to plan for belief set of size {len(possible_init_states)}')
+                plan_res = planner.solve(
+                    problem,
+                    timeout=timeout
+                )
+        except Exception as e:
+            if task_logger is not None:
+                task_logger.error(
+                    "Error during planning",
+                    extra=log_plan_extra | {"exception": str(e)} if log_plan_extra else {"exception": str(e)}
+                )
+            else:
+                print(f"Error during planning: {e}")
+
+        if plan_res is not None and plan_res.status == PlanGenerationResultStatus.SOLVED_SATISFICING:
+            return plan_res
+    
+    return None
 
 
 def enumerate_states_by_probability(
