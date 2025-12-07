@@ -9,6 +9,8 @@ from .up_utils import has_quantifiers
 
 
 
+
+
 def expand_quantifiers(problem: Problem, expr: FNode) -> FNode:
     # Very simplified: only handles Forall over a single variable v of some type T
     # and assumes the body has no *nested* quantifiers.
@@ -196,7 +198,6 @@ def cpor_solve(problem: ContingentProblem,
         plan_res = None
         try:
             with OneshotPlanner(name="MetaCPORPlanning[fast-downward]") as planner:
-                print(f'attempting to plan for belief set of size {len(possible_init_states)}')
                 plan_res = planner.solve(
                     problem,
                     timeout=timeout

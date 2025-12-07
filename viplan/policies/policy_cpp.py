@@ -26,7 +26,8 @@ from .cpp_utils import (
     to_contingent_problem,
     enumerate_states_by_probability,
     set_cp_initial_state_constraints_from_belief,
-    extract_conformant_plan
+    extract_conformant_plan,
+    cpor_solve,
 )
 from .natural_language_utils import PREDICATE_QUESTIONS, load_prompt
 from .policy_interface import Policy, PolicyObservation, PolicyAction
@@ -41,6 +42,9 @@ from .up_utils import (
 from ..models.custom_vqa.openai import OpenAIVQA, OPENAI_MODEL_ID_PREFIX
 
 BASE_PROMPT_FILE_PATH = Path("benchmark/igibson/prompt_po_all-BB.md")
+
+env = environment.get_environment()
+env.factory.add_meta_engine('MetaCPORPlanning', 'up_cpor.engine', 'CPORMetaEngineImpl')
 
 
 class PolicyCPP(Policy):
@@ -114,9 +118,6 @@ class PolicyCPP(Policy):
         self.current_plan = None
 
         # create planner to avoid recreating it at each replan
-        env = environment.get_environment()
-        env.factory.add_meta_engine('MetaCPORPlanning', 'up_cpor.engine', 'CPORMetaEngineImpl')
-        self.planner = OneshotPlanner(name='MetaCPORPlanning[fast-downward]')
         self.planner_timeout = planner_timeout
 
         # initialize the VLM model
@@ -295,27 +296,24 @@ class PolicyCPP(Policy):
             total_prob += prob
             self.set_acc_probs.append(total_prob)
         
-        
-        # set initial state constraints in the contingent problem
-        # based on all states selected so far.
-        set_cp_initial_state_constraints_from_belief(
-            self.contingent_problem,
-            self.belief_set
-        )
-
         # try to find a conformant plan for the largest belief set
-        plan_res = None
         try:
             print(f'attempting to plan for belief set of size {len(self.belief_set)} with probability {total_prob}')
-            plan_res = self.planner.solve(
+            plan_res = cpor_solve(
                 self.contingent_problem,
-                timeout=self.planner_timeout
+                self.belief_set,
+                timeout=self.planner_timeout,
+                task_logger=self.task_logger,
+                log_plan_extra=log_plan_extra
             )
+            print(f'plan_res: {plan_res}')
         except Exception as e:
             self.task_logger.error(
                 "Error during planning",
                 extra=log_plan_extra | {"exception": str(e)}
             )
+            print('exception during planning:\n', e)
+            plan_res = None
 
         if (plan_res is not None and
                 plan_res.status == PlanGenerationResultStatus.SOLVED_SATISFICING):
@@ -330,24 +328,23 @@ class PolicyCPP(Policy):
             while low <= high:
                 mid = (low + high) // 2
 
-                # set initial state constraints for the current belief subset
-                set_cp_initial_state_constraints_from_belief(
-                    self.contingent_problem,
-                    self.belief_set[:mid + 1]
-                )
-
-                plan_res = None
                 try:
-                    print(f'attempting to plan for belief set of size {len(self.belief_set)} with probability {total_prob}')
-                    plan_res = self.planner.solve(
+                    print(f'attempting to plan for belief set of size {mid + 1} with probability {total_prob}')
+                    plan_res = cpor_solve(
                         self.contingent_problem,
-                        timeout=self.planner_timeout
+                        self.belief_set[:mid + 1],
+                        timeout=self.planner_timeout,
+                        task_logger=self.task_logger,
+                        log_plan_extra=log_plan_extra
                     )
+                    print(f'plan_res: {plan_res}')
                 except Exception as e:
                     self.task_logger.error(
                         "Error during planning",
                         extra=log_plan_extra | {"exception": str(e)}
                     )
+                    print('exception during planning:\n', e)
+                    plan_res = None
 
                 if (plan_res is not None and
                         plan_res.status == PlanGenerationResultStatus.SOLVED_SATISFICING):
