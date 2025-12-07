@@ -58,7 +58,8 @@ class PolicyCPP(Policy):
         tasks_logger: Logger,
         log_extra: Optional[Dict[str, Any]] = None,
         conformant_prob: float = 0.8,
-        belief_update_weight: float = 0.3,
+        max_belief_states: int = 1_000,
+        belief_update_weight: float = 0.001,
         blind_plan_execution: bool = False,
         use_unknown_token: bool = True,
         use_fd_constraints: bool = True,
@@ -83,6 +84,7 @@ class PolicyCPP(Policy):
 
         # set the conformant probability threshold for choosing the states in the belief.
         self.conformant_prob = conformant_prob
+        self.max_belief_states = max_belief_states
 
         # Whether to use fast-downward constraints to filter out impossible states.
         self.use_fd_constraints = use_fd_constraints
@@ -295,6 +297,10 @@ class PolicyCPP(Policy):
             self.belief_set.append(state)
             total_prob += prob
             self.set_acc_probs.append(total_prob)
+
+            # limit the size of the belief set to avoid excessive computation and memory usage
+            if len(self.belief_set) >= self.max_belief_states:
+                break
         
         # try to find a conformant plan for the largest belief set
         try:
