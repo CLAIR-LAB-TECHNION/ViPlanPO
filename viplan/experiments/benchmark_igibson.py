@@ -324,7 +324,7 @@ def main(
             logger.info(f"Goal: {goal_string}")
 
             # img_output_dir = get_img_output_dir(policy_cls, instance_id, scene_id, task)
-            img_output_dir = output_dir
+            img_output_dir = os.path.join(output_dir, f'img', f'{task}_{scene_id}_{instance_id}_{policy_cls}')
 
             log_extra = {
                 'problem_file': problem_file,
