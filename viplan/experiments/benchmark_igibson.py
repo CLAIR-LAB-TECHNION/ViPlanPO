@@ -285,10 +285,11 @@ def main(
     random.seed(seed)
     torch.manual_seed(seed)
     transformers.set_seed(seed)
-    
-    logger = get_logger(log_level=log_level)
-    unique_id = get_unique_id(logger)
-    tasks_logger = get_task_logger(out_dir=output_dir, unique_id=unique_id)
+
+    unique_id = get_unique_id()
+    output_dir = os.path.join(output_dir, unique_id)
+    logger = get_logger(log_level=log_level, log_file=os.path.join(output_dir, 'log.log'))
+    tasks_logger = get_task_logger(out_dir=output_dir)
         
     if hf_cache_dir is None:
         hf_cache_dir = os.environ.get("HF_HOME", None)
@@ -322,7 +323,8 @@ def main(
             goal_string = get_goal_str(env)
             logger.info(f"Goal: {goal_string}")
 
-            img_output_dir = get_img_output_dir(policy_cls, instance_id, scene_id, task)
+            # img_output_dir = get_img_output_dir(policy_cls, instance_id, scene_id, task)
+            img_output_dir = output_dir
 
             log_extra = {
                 'problem_file': problem_file,

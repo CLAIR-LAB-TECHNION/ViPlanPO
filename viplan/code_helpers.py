@@ -7,17 +7,17 @@ import torch
 from typing import List, Dict, Tuple, Union
 from mloggers import LogLevel, ConsoleLogger, FileLogger, MultiLogger
 
-def get_unique_id(logger):
+def get_unique_id(logger=None):
     array_job_id = os.environ.get("SLURM_ARRAY_JOB_ID")
     job_id = array_job_id if array_job_id is not None else os.environ.get("SLURM_JOB_ID")
     if job_id is not None:
         task_id = os.environ.get("SLURM_ARRAY_TASK_ID")
         unique_id = f"{job_id}_{task_id}" if task_id is not None else job_id
-        logger.info(f"Found SLURM job id: {unique_id}")
+        # logger.info(f"Found SLURM job id: {unique_id}")
     else:
         import datetime
         unique_id = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-        logger.info(f"Using datetime as unique id: {unique_id}")
+        # logger.info(f"Using datetime as unique id: {unique_id}")
         
     return unique_id
 

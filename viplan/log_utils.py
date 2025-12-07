@@ -84,12 +84,12 @@ class JsonFormatter(logging.Formatter):
         return json.dumps(json_record)
 
 
-def get_task_logger(out_dir : os.PathLike, unique_id: str):
+def get_task_logger(out_dir : os.PathLike):
     logger = logging.getLogger(__name__)
     logger.setLevel(logging.INFO)
 
     # Log file configuration
-    log_file_path = os.path.join(out_dir, f'execution_{unique_id}.log')
+    log_file_path = os.path.join(out_dir, f'execution.jsonl')
 
     max_bytes = 1024 * 1024  # 1 MB in bytes
     backup_count = 5  # Keep 5 backup files (app_size_rotated.log.1, .2, etc.)
