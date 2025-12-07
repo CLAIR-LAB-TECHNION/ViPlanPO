@@ -59,7 +59,7 @@ class PolicyCPP(Policy):
         log_extra: Optional[Dict[str, Any]] = None,
         conformant_prob: float = 0.8,
         max_belief_states: int = 1_000,
-        belief_update_weight: float = 0.001,
+        belief_update_weight: float = 0.2,
         blind_plan_execution: bool = False,
         use_unknown_token: bool = True,
         use_fd_constraints: bool = True,
@@ -281,6 +281,9 @@ class PolicyCPP(Policy):
         return total_prob
 
     def _set_belief_set_and_plan(self, log_plan_extra) -> None:
+        
+        start_time = time.time()
+        
         self.belief_set = []
         self.set_acc_probs = []
         self.current_plan = None
@@ -366,6 +369,8 @@ class PolicyCPP(Policy):
             total_prob = best_prob
             self.belief_set = self.belief_set[:best_belief_set_size]
         
+        end_time = time.time()
+        log_plan_extra['planning_time_seconds'] = end_time - start_time
 
         log_plan_extra['conformant_plan_success_probability'] = total_prob
         log_plan_extra['num_selected_states'] = len(self.belief_set)
