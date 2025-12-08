@@ -282,6 +282,7 @@ def main(
     policy_cls: str = 'PolicyCPP',
     use_predicate_groundings: bool = True,
     problem_filter_regex: str = None,
+    repeats: int = 1,
     **kwargs):
     
     random.seed(seed)
@@ -319,67 +320,68 @@ def main(
         task = metadata[os.path.basename(problem_file)]['activity_name']
         scene_instance_pairs = metadata[os.path.basename(problem_file)]['scene_instance_pairs']
         for scene_id, instance_id in scene_instance_pairs:
-            episode_id = f'{task}_{scene_id}_{instance_id}_{policy_cls}'
-            if problem_filter_regex is not None:
-                if not re.match(problem_filter_regex, episode_id):
-                    continue
-            env = iGibsonClient(task=task, scene_id=scene_id, instance_id=instance_id, problem=problem, base_url=base_url, logger=logger)
-            env.reset() # Reset = send a request to the server to re-initialize the task (also needed when switching tasks)
+            for repeat in range(repeats):
+                episode_id = f'{task}_{scene_id}_{instance_id}_{policy_cls}_{repeat}'
+                if problem_filter_regex is not None:
+                    if not re.match(problem_filter_regex, episode_id):
+                        continue
+                env = iGibsonClient(task=task, scene_id=scene_id, instance_id=instance_id, problem=problem, base_url=base_url, logger=logger)
+                env.reset() # Reset = send a request to the server to re-initialize the task (also needed when switching tasks)
 
-            goal_string = get_goal_str(env)
-            logger.info(f"Goal: {goal_string}")
+                goal_string = get_goal_str(env)
+                logger.info(f"Goal: {goal_string}")
 
-            # img_output_dir = get_img_output_dir(policy_cls, instance_id, scene_id, task)
-            img_output_dir = os.path.join(output_dir, f'img', episode_id)
+                # img_output_dir = get_img_output_dir(policy_cls, instance_id, scene_id, task)
+                img_output_dir = os.path.join(output_dir, f'img', episode_id)
 
-            log_extra = {
-                'problem_file': problem_file,
-                'task': task,
-                'scene_id': scene_id,
-                'instance_id': instance_id,
-                'policy_cls': PolicyCls.__name__,
-                'use_predicate_groundings': use_predicate_groundings,
-                'model': model_name,
-                'img_output_dir': img_output_dir,
-            }
+                log_extra = {
+                    'problem_file': problem_file,
+                    'task': task,
+                    'scene_id': scene_id,
+                    'instance_id': instance_id,
+                    'policy_cls': PolicyCls.__name__,
+                    'use_predicate_groundings': use_predicate_groundings,
+                    'model': model_name,
+                    'img_output_dir': img_output_dir,
+                }
 
-            if issubclass(PolicyCls, DefaultPlanningPolicy):
-                action_queue = deque()
-                policy = PolicyCls(
-                    action_queue=action_queue,
-                    logger=logger,
+                if issubclass(PolicyCls, DefaultPlanningPolicy):
+                    action_queue = deque()
+                    policy = PolicyCls(
+                        action_queue=action_queue,
+                        logger=logger,
+                    )
+                else:
+                    policy = PolicyCls(
+                        domain_file=domain_file,
+                        problem_file=problem_file,
+                        model=model,
+                        model_name=model_name,
+                        goal_string=goal_string,
+                        tasks_logger=tasks_logger,
+                        log_extra=log_extra,
+                        logger=logger,
+                        problem=problem,
+                    )
+
+                # Run planning loop
+                logger.info("Starting planning loop...")
+                start_time = time.time()
+                problem_results = planning_loop(
+                    env,
+                    policy,
+                    problem,
+                    logger,
+                    tasks_logger,
+                    log_extra,
+                    img_output_dir,
+                    max_steps=max_steps,
+                    use_predicate_groundings=use_predicate_groundings,
                 )
-            else:
-                policy = PolicyCls(
-                    domain_file=domain_file,
-                    problem_file=problem_file,
-                    model=model,
-                    model_name=model_name,
-                    goal_string=goal_string,
-                    tasks_logger=tasks_logger,
-                    log_extra=log_extra,
-                    logger=logger,
-                    problem=problem,
-                )
-
-            # Run planning loop
-            logger.info("Starting planning loop...")
-            start_time = time.time()
-            problem_results = planning_loop(
-                env,
-                policy,
-                problem,
-                logger,
-                tasks_logger,
-                log_extra,
-                img_output_dir,
-                max_steps=max_steps,
-                use_predicate_groundings=use_predicate_groundings,
-            )
-            results[f"{problem_file}_{scene_id}_{instance_id}"] = problem_results
-            log_extra['elapsed_time'] = time.time() - start_time
-            log_extra['completed'] = problem_results['completed']
-            tasks_logger.info('Finished planning loop', extra=log_extra)
+                results[f"{problem_file}_{scene_id}_{instance_id}"] = problem_results
+                log_extra['elapsed_time'] = time.time() - start_time
+                log_extra['completed'] = problem_results['completed']
+                tasks_logger.info('Finished planning loop', extra=log_extra)
     
     # Compute some statistics
     total_actions = 0
