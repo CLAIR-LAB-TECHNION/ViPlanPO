@@ -3,24 +3,21 @@ from __future__ import annotations
 import json
 import re
 from pathlib import Path
-from typing import Iterable, List, Sequence
+from typing import Iterable, List, Sequence, Tuple
 
 PLANNING_DIR = Path("results/planning")
 OUTPUT_DIR = PLANNING_DIR / "vila_plans"
 TIMESTAMP_PATTERN = re.compile(r"\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}")
 
 
-def _find_latest_execution_file() -> Path | None:
-    """Return the most recently modified ``execution.jsonl`` under planning results."""
+def _find_execution_files() -> List[Path]:
+    """Return all ``execution.jsonl`` files under planning results sorted by path."""
     if not PLANNING_DIR.exists():
-        return None
+        return []
 
     candidates = list(PLANNING_DIR.rglob("execution.jsonl"))
-    if not candidates:
-        return None
-
-    candidates.sort(key=lambda path: (path.stat().st_mtime, path.as_posix()))
-    return candidates[-1]
+    candidates.sort(key=lambda path: path.as_posix())
+    return candidates
 
 
 def _extract_timestamp(path: Path) -> str:
@@ -45,9 +42,9 @@ def _format_plan(plan: Sequence[dict]) -> List[str]:
     return formatted_steps
 
 
-def _load_plans(path: Path) -> List[List[str]]:
-    """Read all VLM plans from the execution log."""
-    plans: List[List[str]] = []
+def _load_plans(path: Path) -> List[Tuple[dict, List[str]]]:
+    """Read all VLM plans and metadata from the execution log."""
+    plans: List[Tuple[dict, List[str]]] = []
     with path.open("r") as handle:
         for line in handle:
             try:
@@ -68,33 +65,51 @@ def _load_plans(path: Path) -> List[List[str]]:
             if not isinstance(plan, list):
                 continue
 
-            plans.append(_format_plan(plan))
+            metadata_source = args if isinstance(args, dict) else record
+            metadata = {
+                "policy_cls": metadata_source.get("policy_cls"),
+                "scene_id": metadata_source.get("scene_id"),
+                "instance_id": metadata_source.get("instance_id"),
+                "problem_file": metadata_source.get("problem_file"),
+            }
+
+            plans.append((metadata, _format_plan(plan)))
     return plans
 
 
 def main() -> None:
-    latest_execution = _find_latest_execution_file()
-    if latest_execution is None:
+    execution_files = _find_execution_files()
+    if not execution_files:
         print(f"No execution.jsonl files found under {PLANNING_DIR}.")
         return
 
-    plans = _load_plans(latest_execution)
-    if not plans:
-        print(f"No VLM plans found in {latest_execution}.")
-        return
-
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-    timestamp = _extract_timestamp(latest_execution)
-    output_path = OUTPUT_DIR / f"{timestamp}.txt"
 
-    with output_path.open("w") as handle:
-        for index, plan in enumerate(plans, start=1):
-            handle.write(f"Plan {index}:\n")
-            handle.write("\n".join(plan))
-            if index < len(plans):
-                handle.write("\n\n")
+    for execution_file in execution_files:
+        plans = _load_plans(execution_file)
+        if not plans:
+            print(f"No VLM plans found in {execution_file}.")
+            continue
 
-    print(f"Saved {len(plans)} plan(s) to {output_path}")
+        timestamp = _extract_timestamp(execution_file)
+        output_path = OUTPUT_DIR / f"{timestamp}.txt"
+
+        with output_path.open("w") as handle:
+            for index, (metadata, plan) in enumerate(plans, start=1):
+                handle.write(
+                    "Plan {index} (policy_cls={policy_cls}, scene_id={scene_id}, instance_id={instance_id}, problem_file={problem_file}):\n".format(
+                        index=index,
+                        policy_cls=metadata.get("policy_cls"),
+                        scene_id=metadata.get("scene_id"),
+                        instance_id=metadata.get("instance_id"),
+                        problem_file=metadata.get("problem_file"),
+                    )
+                )
+                handle.write("\n".join(plan))
+                if index < len(plans):
+                    handle.write("\n\n")
+
+        print(f"Saved {len(plans)} plan(s) to {output_path}")
 
 
 if __name__ == "__main__":
