@@ -58,18 +58,22 @@ class PolicyCPP(Policy):
         tasks_logger: Logger,
         log_extra: Optional[Dict[str, Any]] = None,
         conformant_prob: float = 0.8,
-        max_belief_states: int = 1_000,
+        max_belief_states: int = 10_000,
         belief_update_weight: float = 0.2,
         blind_plan_execution: bool = False,
         use_unknown_token: bool = True,
         use_fd_constraints: bool = True,
-        planner_timeout: Optional[float] = None,
+        planner_timeout: Optional[float] = 10.0,
         goal_string: str = "",
         **vlm_inference_kwargs: Dict[str, Any]
     ):
         super().__init__()
 
         base_prompt = load_prompt(BASE_PROMPT_FILE_PATH)
+
+        if not domain_file.endswith('-cond.pddl'):
+            # change to conditional version of the domain
+            domain_file = domain_file.replace('.pddl', '-cond.pddl')
 
         # convert the classical problem into a ContingentProblem object that will
         # represent the conformant problem internally.
