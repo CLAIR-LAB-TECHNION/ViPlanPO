@@ -333,6 +333,7 @@ def main(
 
                 # img_output_dir = get_img_output_dir(policy_cls, instance_id, scene_id, task)
                 img_output_dir = os.path.join(output_dir, f'img', episode_id)
+                os.makedirs(img_output_dir, exist_ok=True)
 
                 log_extra = {
                     'problem_file': problem_file,
