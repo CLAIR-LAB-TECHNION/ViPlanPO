@@ -4,9 +4,9 @@ import os
 os.environ["PYTHONNET_RUNTIME"] = "mono"
 
 # set PYTHONNET_MONO_LIBMONO="$(brew --prefix mono)/lib/libmonosgen-2.0.dylib"
-os.environ["PYTHONNET_MONO_LIBMONO"] = (
-    "/opt/homebrew/opt/mono/lib/libmonosgen-2.0.dylib"
-)
+# os.environ["PYTHONNET_MONO_LIBMONO"] = (
+#     "/opt/homebrew/opt/mono/lib/libmonosgen-2.0.dylib"
+# )
 
 import sys
 sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
