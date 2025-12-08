@@ -18,13 +18,14 @@ import pytest
 
 import unified_planning.environment as environment
 from unified_planning.shortcuts import OneshotPlanner
-from unified_planning.engines.sequential_simulator import UPSequentialSimulator
+from unified_planning.engines.sequential_simulator import UPSequentialSimulator, UPState
 
 from viplan.policies.up_utils import (
     get_mapping_from_compiled_actions_to_original_actions,
     ground_predicate_str_to_fnode,
     create_up_problem,
     get_all_grounded_predicates_for_objects,
+    convert_state_dict_to_up_compatible
 )
 from viplan.policies.cpp_utils import (
     to_contingent_problem,
@@ -449,5 +450,20 @@ def test_subsets_of_initial_states(subset):
         cur_state = new_state
 
     assert sim.is_goal(cur_state), f"didn't reach the goal!, failed subset:\n{subset}\n\nproblem definition:\n{cp}"
+
+    # check that it is truly conformant, i.e., gets to the goal from all initial states
+    for state in states:
+        str_state = {str(f): v for f, v in state.items()}
+        up_compat_state = convert_state_dict_to_up_compatible(orig_problem, str_state)
+
+        sim = UPSequentialSimulator(orig_problem)
+        cur_state = UPState(up_compat_state, orig_problem)
+        for a in action_seq_orig_problem:
+            print("Applying action:", a)
+            new_state = sim.apply(cur_state, a)
+            assert new_state is not None, f"Action {a} is not applicable in state {cur_state}"
+            cur_state = new_state
+
+        assert sim.is_goal(cur_state), f"didn't reach the goal from state {state}!, failed subset:\n{subset}\n\nproblem definition:\n{cp}"
 
 
