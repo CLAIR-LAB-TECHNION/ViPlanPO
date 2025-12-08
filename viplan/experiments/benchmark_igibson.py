@@ -1,4 +1,5 @@
 import os
+import re
 import traceback
 
 import fire
@@ -280,6 +281,7 @@ def main(
     max_steps: int = 10,
     policy_cls: str = 'PolicyCPP',
     use_predicate_groundings: bool = True,
+    problem_filter_regex: str = None,
     **kwargs):
     
     random.seed(seed)
@@ -317,6 +319,10 @@ def main(
         task = metadata[os.path.basename(problem_file)]['activity_name']
         scene_instance_pairs = metadata[os.path.basename(problem_file)]['scene_instance_pairs']
         for scene_id, instance_id in scene_instance_pairs:
+            episode_id = f'{task}_{scene_id}_{instance_id}_{policy_cls}'
+            if problem_filter_regex is not None:
+                if not re.match(problem_filter_regex, episode_id):
+                    continue
             env = iGibsonClient(task=task, scene_id=scene_id, instance_id=instance_id, problem=problem, base_url=base_url, logger=logger)
             env.reset() # Reset = send a request to the server to re-initialize the task (also needed when switching tasks)
 
@@ -324,7 +330,7 @@ def main(
             logger.info(f"Goal: {goal_string}")
 
             # img_output_dir = get_img_output_dir(policy_cls, instance_id, scene_id, task)
-            img_output_dir = os.path.join(output_dir, f'img', f'{task}_{scene_id}_{instance_id}_{policy_cls}')
+            img_output_dir = os.path.join(output_dir, f'img', episode_id)
 
             log_extra = {
                 'problem_file': problem_file,
