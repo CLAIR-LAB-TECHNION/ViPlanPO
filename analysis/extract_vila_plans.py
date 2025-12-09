@@ -6,7 +6,6 @@ from pathlib import Path
 from typing import Iterable, List, Sequence, Tuple
 
 PLANNING_DIR = Path("results/planning")
-OUTPUT_DIR = PLANNING_DIR / "vila_plans"
 TIMESTAMP_PATTERN = re.compile(r"\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}")
 
 
@@ -83,8 +82,6 @@ def main() -> None:
         print(f"No execution.jsonl files found under {PLANNING_DIR}.")
         return
 
-    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-
     for execution_file in execution_files:
         plans = _load_plans(execution_file)
         if not plans:
@@ -92,7 +89,7 @@ def main() -> None:
             continue
 
         timestamp = _extract_timestamp(execution_file)
-        output_path = OUTPUT_DIR / f"{timestamp}.txt"
+        output_path = execution_file.parent / f"{timestamp}.txt"
 
         with output_path.open("w") as handle:
             for index, (metadata, plan) in enumerate(plans, start=1):
