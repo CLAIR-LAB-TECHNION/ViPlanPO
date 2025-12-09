@@ -10,6 +10,7 @@ import time
 import torch
 import random
 import transformers
+from tqdm.auto import tqdm
 
 from collections import deque
 from typing import Optional
@@ -312,15 +313,15 @@ def main(
     problem_files = [problem for problem in metadata.keys()]
     problem_files = [f"{problems_dir}/{problem}" for problem in problem_files]
     
-    for problem_file in problem_files:
+    for problem_file in tqdm(problem_files, desc="Problems", unit="problem"):
         logger.info(f"Loading problem {problem_file}")
-        
+
         reader = PDDLReader()
         problem = reader.parse_problem(domain_file, problem_file)
         task = metadata[os.path.basename(problem_file)]['activity_name']
         scene_instance_pairs = metadata[os.path.basename(problem_file)]['scene_instance_pairs']
-        for scene_id, instance_id in scene_instance_pairs:
-            for repeat in range(repeats):
+        for scene_id, instance_id in tqdm(scene_instance_pairs, desc=f"Scenes ({task})", unit="scene", leave=False):
+            for repeat in tqdm(range(repeats), desc="Repeats", unit="repeat", leave=False):
                 episode_id = f'{task}_{scene_id}_{instance_id}_{policy_cls}_{repeat}'
                 if problem_filter_regex is not None:
                     if not re.match(problem_filter_regex, episode_id):
