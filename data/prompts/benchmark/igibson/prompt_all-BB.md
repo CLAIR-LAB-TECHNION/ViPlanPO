@@ -1,0 +1,4 @@
+You are tasked with replying to a question about the given image. You will be given a single question, defined after the keyword "Question:" and will need to answer it ONLY with Yes or No. Do not write anything else besides your answer.
+
+The environment is a virtual household simulator. Keep in mind that some objects might not be visible or immediately reachable, they might be out-of-sight in some container.
+There is a robotic arm, which is the agent, that can hold objects. Visible objects related to the task are highlighted with red bounding boxes and labeled. Objects that are not in bounding boxes are not relevant to the task, ignore them when you answer.

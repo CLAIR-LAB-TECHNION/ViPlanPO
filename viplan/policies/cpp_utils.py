@@ -167,6 +167,17 @@ def set_cp_initial_state_constraints_from_belief(
     if formulas:
         problem.add_oneof_initial_constraint(formulas)
 
+def set_cp_initial_state_without_constraints_from_belief(
+        problem: ContingentProblem,
+        possible_init_states: Iterable[Dict[FNode, bool]],
+        version: int = 0,
+) -> None:
+    # clear existing initial state
+    problem._initial_value.clear()
+
+    for f, v in possible_init_states[0].items():
+        problem.set_initial_value(f, v)
+
 
 def extract_conformant_plan(p_planNode):
     out = []
