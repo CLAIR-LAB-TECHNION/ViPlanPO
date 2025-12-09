@@ -267,6 +267,7 @@ def planning_loop(
         logger.info("Goal reached!")
         problem_results['completed'] = True
 
+    img = env.render()
     img.save(
         os.path.join(
             img_output_dir, f"env_render_{step+1}_over.png"
