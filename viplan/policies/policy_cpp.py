@@ -8,6 +8,7 @@
 
 import os
 import random
+import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 from logging import Logger
@@ -279,6 +280,7 @@ class PolicyCPP(Policy):
 
         # accumulate probability mass until reaching threshold
         total_prob = 0.0
+        t = time.time()
         for state_str, prob in enumerate_states_by_probability(self.factored_belief):
             # turn state string into a dict representation
             state = {
@@ -342,7 +344,8 @@ class PolicyCPP(Policy):
             "New conformant plan",
             extra=log_plan_extra | {
                 "selected_states": selected_states,
-                "n_states": len(self.belief_set)
+                "n_states": len(self.belief_set),
+                "planning_time": time.time() - t,
             }
         )
         
