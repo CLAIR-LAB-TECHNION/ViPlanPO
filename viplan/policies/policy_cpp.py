@@ -154,6 +154,7 @@ class PolicyCPP(Policy):
             model=model,
             goal_string=goal_string,
             logger=self.logger,
+            tasks_logger=self.task_logger,
         )
         
         # log all relevant initialization info
