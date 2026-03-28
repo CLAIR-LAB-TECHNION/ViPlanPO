@@ -140,7 +140,10 @@
             (forall
                 (?o - object)
                 (when 
-                    (inside ?o ?c)
+                    (and
+                        (reachable ?c)
+                        (inside ?o ?c)
+                    )
                     (not (reachable ?o))    
                 ) ;; All objects inside the container are unreachable
             )
