@@ -80,7 +80,7 @@ To install the environment, first clone our fork of iGibson:
 
 ```bash
 git clone --depth 1 --single-branch --branch release_viplan https://github.com/nicoladainese96/iGibson.git ./iGibson --recursive
-git clone https://github.com/StanfordVL/behavior.git
+git clone https://github.com/guyazran/behavior.git
 ```
 
 Since iGibson requires specific packages, we recommend running it inside a container. Our code is designed to work with [Apptainer](https://apptainer.org). To pull the image, run:
