@@ -53,7 +53,7 @@ pip install flashinfer-python -i https://flashinfer.ai/whl/cu124/torch2.6/
 The following is required if you're using the CPP Policy:
 ```bash
 micromamba install mono -c conda-forge
-pip install git+https://github.com/guyazran/up-cpor
+pip install "git+https://github.com/guyazran/up-cpor@viplanhh"
 ```
 conda install -c conda-forge mono
 
