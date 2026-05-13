@@ -101,7 +101,7 @@ mamba install python=3.9
 Then, install the iGibson dependencies, still inside the container:
 
 ```bash
-python -m venv --system-site-packages ./igibson_env
+python3.9 -m venv --system-site-packages ./igibson_env
 source igibson_env/bin/activate
 pip install -e ./iGibson
 pip install -e ./behavior
