@@ -93,15 +93,15 @@ This will create a file called `igibson_latest.sif` (it should take approximatel
 apptainer exec --nv igibson_latest.sif bash
 ```
 
-In the container, install Python3.9:
+In the container, install Python3.8:
 ```bash
-mamba install python=3.9
+mamba install python=3.8
 ```
 
 Then, install the iGibson dependencies, still inside the container:
 
 ```bash
-python3.9 -m venv --system-site-packages ./igibson_env
+python3.8 -m venv --system-site-packages ./igibson_env
 source igibson_env/bin/activate
 pip install -e ./iGibson
 pip install -e ./behavior
