@@ -2,7 +2,7 @@ import heapq
 from typing import List, Dict, Generator, Tuple, Iterable
 
 from unified_planning.shortcuts import *
-from unified_planning.model import ContingentProblem
+from unified_planning.model.contingent import ContingentProblem
 from unified_planning.engines.results import PlanGenerationResultStatus
 
 from .up_utils import has_quantifiers

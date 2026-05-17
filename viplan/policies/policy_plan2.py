@@ -250,7 +250,8 @@ class PolicyPlan(Policy):
             parameters=list(map(str, next_action_orig.actual_parameters)),
             raw_response=[
                 str(a) for a in [next_action] + self.current_plan
-            ]
+            ],
+            planning_time=log_plan_extra.get('planning_time_seconds', None),
         )
 
         # set previous action for next belief step.
@@ -547,6 +548,3 @@ class PolicyPlan(Policy):
                 continue
 
         return None
-
-    def __del__(self):
-        self.planner.destroy()

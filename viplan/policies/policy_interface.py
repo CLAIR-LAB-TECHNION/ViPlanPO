@@ -43,6 +43,7 @@ class PolicyAction:
     parameters: Sequence[str]
     raw_response: Optional[Any] = None
     metadata: Dict[str, Any] = field(default_factory=dict)
+    planning_time: Optional[float] = None
 
     def as_env_command(self) -> Dict[str, Any]:
         """Return a serialisable view of the action for logging purposes."""
