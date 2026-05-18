@@ -60,7 +60,7 @@ class PolicyCPP(Policy):
         conformant_prob: float = 0.8,
         max_belief_states: int = 10_000,
         belief_update_weight: float = 0.2,
-        blind_plan_execution: bool = False,
+        blind_plan_execution: bool = True,
         use_unknown_token: bool = True,
         use_fd_constraints: bool = True,
         planner_timeout: Optional[float] = 10.0,
