@@ -89,7 +89,7 @@ def main() -> None:
             continue
 
         timestamp = _extract_timestamp(execution_file)
-        output_path = execution_file.parent / f"{timestamp}.txt"
+        output_path = execution_file.parent / f"plans_{timestamp}.txt"
 
         with output_path.open("w") as handle:
             for index, (metadata, plan) in enumerate(plans, start=1):
