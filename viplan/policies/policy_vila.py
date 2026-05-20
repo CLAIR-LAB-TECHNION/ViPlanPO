@@ -1,6 +1,7 @@
 import json
 from pathlib import Path
 from typing import Optional, Dict, Any
+import time
 
 from viplan.code_helpers import get_logger
 from viplan.policies.natural_language_utils import PREDICATE_QUESTIONS, load_prompt
@@ -71,9 +72,12 @@ class DefaultVILAPolicy(Policy):
         self.logger.debug(f"Prompt:\n{prompt}")
         if observation.image is None:
             raise ValueError("VILA policy requires an RGB observation")
+        
+        start_time = time.time()
         outputs = self.model.generate(
             prompts=[prompt], images=[observation.image], return_probs=False
         )
+        end_time = time.time()
         self.logger.info("VLM output: " + outputs[0])
         vlm_plan = parse_json_output(outputs[0])
         if 'plan' not in vlm_plan or not vlm_plan['plan']:
@@ -87,4 +91,5 @@ class DefaultVILAPolicy(Policy):
             parameters=action_params,
             raw_response=vlm_plan,
             metadata={'vlm_plan': vlm_plan},
+            planning_time=end_time - start_time,
         )

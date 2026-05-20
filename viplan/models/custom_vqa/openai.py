@@ -76,8 +76,8 @@ class OpenAIVQA:
         images: List[Image],
         query: str,
         max_new_tokens: int = 512,
-        temperature: float = 1.0,
-        top_p: float = 1.0,
+        temperature: float = 0.0,
+        # top_p: float = 1.0,
         **kwargs,
     ) -> ChatCompletion:
         # convert images to base64 strings
@@ -108,7 +108,7 @@ class OpenAIVQA:
             model=self.model_id,
             max_completion_tokens=max_new_tokens,
             temperature=temperature,
-            top_p=top_p,
+            # top_p=top_p,
             logprobs=True,
             top_logprobs=20,
         )

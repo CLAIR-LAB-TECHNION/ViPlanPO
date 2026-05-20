@@ -24,7 +24,7 @@ dependencies:
   - clang>=7,<20.0
   # CUDA versions are determined by pytorch
   - cudnn>=8.9.2,<10
-  - cuda-version>=12.4,<12.5
+    #- cuda-version>=12.4,<12.5
   - cuda-compiler>=12.4,<12.5
   - cuda-nvcc>=12.4,<12.5
   - cuda-libraries-dev>=12.4,<12.5

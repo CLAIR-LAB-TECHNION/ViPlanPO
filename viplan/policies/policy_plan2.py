@@ -25,7 +25,7 @@ from scipy.special import logit, expit
 from .cpp_utils import (
     to_contingent_problem,
     enumerate_states_by_probability,
-    set_cp_initial_state_constraints_from_belief,
+    set_cp_initial_state_without_constraints_from_belief,
     extract_conformant_plan,
     cpor_solve,
 )
@@ -41,13 +41,13 @@ from .up_utils import (
 )
 from ..models.custom_vqa.openai import OpenAIVQA, OPENAI_MODEL_ID_PREFIX
 
-BASE_PROMPT_FILE_PATH = Path("benchmark/igibson/prompt_po_all-BB.md")
+BASE_PROMPT_FILE_PATH = Path("benchmark/igibson/prompt_all-BB.md")
 
 env = environment.get_environment()
 env.factory.add_meta_engine('MetaCPORPlanning', 'up_cpor.engine', 'CPORMetaEngineImpl')
 
 
-class PolicyCPP(Policy):
+class PolicyPlan(Policy):
     def __init__(
         self,
         domain_file: str,
@@ -58,9 +58,9 @@ class PolicyCPP(Policy):
         tasks_logger: Logger,
         log_extra: Optional[Dict[str, Any]] = None,
         conformant_prob: float = 0.8,
-        max_belief_states: int = 10_000,
-        belief_update_weight: float = 0.2,
-        blind_plan_execution: bool = True,
+        max_belief_states: int = 1,
+        belief_update_weight: float = 1.0,
+        blind_plan_execution: bool = False,
         use_unknown_token: bool = True,
         use_fd_constraints: bool = True,
         planner_timeout: Optional[float] = 10.0,
@@ -78,6 +78,7 @@ class PolicyCPP(Policy):
         # convert the classical problem into a ContingentProblem object that will
         # represent the conformant problem internally.
         orig_problem = create_up_problem(domain_file, problem_file)
+        self.problem = orig_problem
         self.contingent_problem = to_contingent_problem(orig_problem)
 
         # create a mapping so we can translate actions back to the original problem.
@@ -162,7 +163,6 @@ class PolicyCPP(Policy):
             model=model,
             goal_string=goal_string,
             logger=self.logger,
-            tasks_logger=self.task_logger,
         )
         
         # log all relevant initialization info
@@ -217,11 +217,6 @@ class PolicyCPP(Policy):
         elif not self.blind_plan_execution:
             # check if the probability of the current belief set
             # still meets the conformant probability threshold
-            total_belief_prob = self._get_current_belief_set_probability()
-            if total_belief_prob < self.conformant_prob:
-                replan = True
-                replan_reason += "belief probability below threshold; "
-
             # check if next action is safe
             next_action = self.action_mapping(self.current_plan[0])
             if not self._is_safe_action(next_action):
@@ -241,24 +236,22 @@ class PolicyCPP(Policy):
             self.task_logger.info(
                 "No plan. Exploring", extra=log_plan_extra
             )
-            return self.fallback_vila_policy.next_action(
-                observation, log_extra
-            )
+            return None
 
         # get the next action from the current plan
         next_action = self.current_plan.pop(0)
 
         # map the action back to the original problem's action
-        next_action_orig = self.action_mapping(next_action)
+        next_action_orig = next_action
 
         # format the action to be returned
         action = PolicyAction(
             name=next_action_orig.action.name,
             parameters=list(map(str, next_action_orig.actual_parameters)),
             raw_response=[
-                str(a) for a in [next_action_orig] + list(map(self.action_mapping, self.current_plan))
+                str(a) for a in [next_action] + self.current_plan
             ],
-            planning_time=log_plan_extra.get('planning_time_seconds', None)
+            planning_time=log_plan_extra.get('planning_time_seconds', None),
         )
 
         # set previous action for next belief step.
@@ -286,22 +279,21 @@ class PolicyCPP(Policy):
         return total_prob
 
     def _set_belief_set_and_plan(self, log_plan_extra) -> None:
-
+        
         start_time = time.time()
-
+        
         self.belief_set = []
         self.set_acc_probs = []
         self.current_plan = None
 
         # accumulate probability mass until reaching threshold
         total_prob = 0.0
-        t = time.time()
-        state_gen = enumerate_states_by_probability(self.factored_belief)
+        state_gen = enumerate_states_by_probability(self.factored_belief) 
         while total_prob < self.conformant_prob:
             try:
                 state_str, prob = next(state_gen)
             except StopIteration:
-                break
+                break  
             # turn state string into a dict representation
             state = {
                 fluent: (state_str[i] == '1')
@@ -314,17 +306,14 @@ class PolicyCPP(Policy):
             # limit the size of the belief set to avoid excessive computation and memory usage
             if len(self.belief_set) >= self.max_belief_states:
                 break
+        
+        set_cp_initial_state_without_constraints_from_belief(self.problem, self.belief_set,
+                                                     version=0)
 
         # try to find a conformant plan for the largest belief set
         try:
-            print(f'attempting to plan for belief set of size {len(self.belief_set)} with probability {total_prob}')
-            plan_res = cpor_solve(
-                self.contingent_problem,
-                self.belief_set,
-                timeout=self.planner_timeout,
-                task_logger=self.task_logger,
-                log_plan_extra=log_plan_extra
-            )
+            with OneshotPlanner(name='fast-downward') as planner:
+                plan_res = planner.solve(self.problem)
             print(f'plan_res: {plan_res}')
         except Exception as e:
             self.task_logger.error(
@@ -336,49 +325,8 @@ class PolicyCPP(Policy):
 
         if (plan_res is not None and
                 plan_res.status == PlanGenerationResultStatus.SOLVED_SATISFICING):
-            self.current_plan = extract_conformant_plan(plan_res.plan.root_node)
-        else:
-            # do a binary search to find the largest belief set for which a conformant plan exists
-            low = 0
-            high = len(self.belief_set) - 1
-            best_plan = None
-            best_prob = 0.0
-            best_belief_set_size = 0
-            while low <= high:
-                mid = (low + high) // 2
-
-                try:
-                    print(f'attempting to plan for belief set of size {mid + 1} with probability {total_prob}')
-                    plan_res = cpor_solve(
-                        self.contingent_problem,
-                        self.belief_set[:mid + 1],
-                        timeout=self.planner_timeout,
-                        task_logger=self.task_logger,
-                        log_plan_extra=log_plan_extra
-                    )
-                    print(f'plan_res: {plan_res}')
-                except Exception as e:
-                    self.task_logger.error(
-                        "Error during planning",
-                        extra=log_plan_extra | {"exception": str(e)}
-                    )
-                    print('exception during planning:\n', e)
-                    plan_res = None
-
-                if (plan_res is not None and
-                        plan_res.status == PlanGenerationResultStatus.SOLVED_SATISFICING):
-                    # found a plan for this belief subset
-                    best_plan = extract_conformant_plan(plan_res.plan.root_node)
-                    best_prob = self.set_acc_probs[mid]
-                    best_belief_set_size = mid + 1
-                    low = mid + 1  # try for a larger set
-                else:
-                    high = mid - 1  # try for a smaller set
-            
-            self.current_plan = best_plan
-            total_prob = best_prob
-            self.belief_set = self.belief_set[:best_belief_set_size]
-
+            self.current_plan = plan_res.plan.actions
+        
         end_time = time.time()
         log_plan_extra['planning_time_seconds'] = end_time - start_time
 
@@ -388,7 +336,7 @@ class PolicyCPP(Policy):
         # log info about new belief set and plan
         if self.current_plan is None:
             self.task_logger.warning(
-                "No conformant plan found for the current belief.",
+                "No classical plan found for the current belief.",
                 extra=log_plan_extra
             )
             return  # no plan found
@@ -406,8 +354,7 @@ class PolicyCPP(Policy):
             "New conformant plan",
             extra=log_plan_extra | {
                 "selected_states": selected_states,
-                "n_states": len(self.belief_set),
-                "planning_time": time.time() - t,
+                "n_states": len(self.belief_set)
             }
         )
         

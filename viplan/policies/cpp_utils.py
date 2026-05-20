@@ -2,11 +2,94 @@ import heapq
 from typing import List, Dict, Generator, Tuple, Iterable
 
 from unified_planning.shortcuts import *
-from unified_planning.model import ContingentProblem
+from unified_planning.model.contingent import ContingentProblem
+from unified_planning.engines.results import PlanGenerationResultStatus
+
+from .up_utils import has_quantifiers
+
+
+
+
+
+def expand_quantifiers(problem: Problem, expr: FNode) -> FNode:
+    # Very simplified: only handles Forall over a single variable v of some type T
+    # and assumes the body has no *nested* quantifiers.
+    env = problem.environment
+    em = env.expression_manager
+
+    if expr.is_forall():
+        vars = expr.variables()           # <-- NOTE: variables() is a *method*
+        assert len(vars) == 1, "helper currently only supports one quantified var"
+        v = vars[0]
+        body = expr.arg(0)
+
+        objs = list(problem.objects(v.type))
+        if not objs:
+            # Forall over empty domain is True
+            return em.TRUE()
+
+        grounded_bodies = []
+        for o in objs:
+            # substitute v with object o; both are valid 'Expression's
+            grounded = body.substitute({v: o})
+            grounded_bodies.append(expand_quantifiers(problem, grounded))
+
+        return em.And(grounded_bodies)
+
+    # ---------- EXISTS ----------
+    if expr.is_exists():
+        vars = expr.variables()
+        assert len(vars) == 1, "helper currently only supports one quantified var"
+        v = vars[0]
+        body = expr.arg(0)
+
+        objs = list(problem.objects(v.type))
+        if not objs:
+            # Exists over empty domain is False
+            return em.FALSE()
+
+        grounded_bodies = []
+        for o in objs:
+            grounded = body.substitute({v: o})
+            grounded_bodies.append(expand_quantifiers(grounded))
+
+        return em.Or(grounded_bodies)
+
+    # ---------- IMPLIES -> OR/NOT (to keep preconditions simple) ----------
+    if expr.is_implies():
+        left = expand_quantifiers(expr.arg(0))
+        right = expand_quantifiers(expr.arg(1))
+        return em.Or(em.Not(left), right)
+
+    # ---------- BOOLEAN CONNECTIVES ----------
+    if expr.is_and():
+        return em.And([expand_quantifiers(problem, c) for c in expr.args])
+
+    if expr.is_or():
+        return em.Or([expand_quantifiers(problem, c) for c in expr.args])
+
+    if expr.is_not():
+        return em.Not(expand_quantifiers(problem, expr.arg(0)))
+
+    # ---------- LEAF / OTHER NODES ----------
+    return expr
+
+def compile_precondition_quatifiers(problem: Problem) -> Problem:
+    problem = problem.clone()
+    for a in problem.actions:
+        new_pres = [expand_quantifiers(problem, p) for p in a.preconditions]
+        a.clear_preconditions()
+        for p in new_pres:
+            a.add_precondition(p)
+    
+    return problem
 
 
 def _do_required_compilations(problem: Problem) -> Problem:
     if problem.kind.has_universal_conditions():
+        print('removing quantifiers in preconditions...')
+        problem = compile_precondition_quatifiers(problem)
+    if has_quantifiers(problem):
         print('removing quantifiers...')
         with Compiler(problem_kind=problem.kind,
                     compilation_kind=CompilationKind.QUANTIFIERS_REMOVING) as compiler:
@@ -53,15 +136,26 @@ def to_contingent_problem(problem: Problem) -> ContingentProblem:
 
 def set_cp_initial_state_constraints_from_belief(
         problem: ContingentProblem,
-        possible_init_states: Iterable[Dict[FNode, bool]]
+        possible_init_states: Iterable[Dict[FNode, bool]],
+        version: int = 0,
 ) -> None:
-    # set all known fluents
-    unknown_fluents = set()
-    for f, v in possible_init_states[0].items():
-        if all(v == s.get(f, None) for s in possible_init_states):
-            problem.set_initial_value(f, v)
-        else:
-            unknown_fluents.add(f)
+    # clear existing initial state
+    problem._initial_value.clear()
+    problem._or_initial_constraints.clear()
+    problem._oneof_initial_constraints.clear()
+
+    if version == 0:
+        # set all known fluents
+        unknown_fluents = set()
+        for f, v in possible_init_states[0].items():
+            if all(v == s.get(f, None) for s in possible_init_states):
+                problem.set_initial_value(f, v)
+            else:
+                unknown_fluents.add(f)
+    elif version == 1:
+        unknown_fluents = list(possible_init_states[0].keys())
+    else:
+        raise ValueError(f"Unknown version {version} for setting initial state constraints")
 
     # Encode as a disjunction of full-state conjunctions
     # only include fluents with unknown values
@@ -73,6 +167,17 @@ def set_cp_initial_state_constraints_from_belief(
     if formulas:
         problem.add_oneof_initial_constraint(formulas)
 
+def set_cp_initial_state_without_constraints_from_belief(
+        problem: ContingentProblem,
+        possible_init_states: Iterable[Dict[FNode, bool]],
+        version: int = 0,
+) -> None:
+    # clear existing initial state
+    problem._initial_value.clear()
+
+    for f, v in possible_init_states[0].items():
+        problem.set_initial_value(f, v)
+
 
 def extract_conformant_plan(p_planNode):
     out = []
@@ -83,6 +188,44 @@ def extract_conformant_plan(p_planNode):
         else:
             p_planNode = None
     return out
+
+
+def cpor_solve(problem: ContingentProblem,
+               possible_init_states: Iterable[Dict[FNode, bool]],
+               timeout: float,
+               task_logger = None,
+               log_plan_extra: Dict[str, str] = None):
+    
+    for i in range(2):
+        # set initial state constraints in the contingent problem
+        # based on all states selected so far.
+        set_cp_initial_state_constraints_from_belief(
+            problem,
+            possible_init_states,
+            version=i
+        )
+
+        # try to find a conformant plan for the largest belief set
+        plan_res = None
+        try:
+            with OneshotPlanner(name="MetaCPORPlanning[fast-downward]") as planner:
+                plan_res = planner.solve(
+                    problem,
+                    timeout=timeout
+                )
+        except Exception as e:
+            if task_logger is not None:
+                task_logger.error(
+                    "Error during planning",
+                    extra=log_plan_extra | {"exception": str(e)} if log_plan_extra else {"exception": str(e)}
+                )
+            else:
+                print(f"Error during planning: {e}")
+
+        if plan_res is not None and plan_res.status == PlanGenerationResultStatus.SOLVED_SATISFICING:
+            return plan_res
+    
+    return None
 
 
 def enumerate_states_by_probability(

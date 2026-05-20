@@ -26,6 +26,12 @@ from unified_planning.engines.sequential_simulator import UPSequentialSimulator
 from unified_planning.plans.plan import ActionInstance
 
 
+def has_quantifiers(problem: Problem) -> bool:
+    if 'forall' in str(problem).lower() or 'exists' in str(problem).lower():
+        return True
+    return False
+
+
 def create_up_problem(domain: str, problem: str) -> Problem:
     """Create a Unified Planning problem from PDDL files or strings.
     
@@ -365,28 +371,11 @@ def find_goal_relevant_fluents(problem: Problem) -> Set[FNode]:
     def action_touches_relevant(a, relevant_symbols: Set[Fluent]) -> bool:
         """
         Check whether this action mentions any currently-relevant fluent symbol
-        in *any* of:
-          - preconditions
-          - durative conditions
-          - effect targets
-          - effect conditions
-          - effect values
+        in any of its effects. We only care about effects because we are checking
+        if this action can produce relevant fluents (to add more relevant fluents).
         """
-        exprs = []
-
-        if isinstance(a, InstantaneousAction):
-            exprs.extend(a.preconditions)
-            for eff in a.effects:
-                exprs.append(eff.fluent)
-                exprs.append(eff.condition)
-                exprs.append(eff.value)
-
-        # You can extend here for Events / Processes if needed.
-
-        for e in exprs:
-            if e is None:
-                continue
-            for atom in fve.get(e):
+        for effect in a.effects:
+            for atom in fve.get(effect.fluent):
                 if atom.fluent() in relevant_symbols:
                     return True
         return False
@@ -403,9 +392,7 @@ def find_goal_relevant_fluents(problem: Problem) -> Set[FNode]:
                 add_atoms_from_expressions(
                     target_atoms,
                     target_symbols,
-                    eff.fluent,
                     eff.condition,
-                    eff.value,
                 )
 
         # Extend similarly for Events / Processes if you use them.
