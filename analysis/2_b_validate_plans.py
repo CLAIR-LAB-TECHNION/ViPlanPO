@@ -1,11 +1,21 @@
 from __future__ import annotations
 
+import argparse
 import csv
 import json
 import sys
 import warnings
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
+
+_GREEN = "\033[32m"
+_RED   = "\033[31m"
+_GRAY  = "\033[90m"
+_RESET = "\033[0m"
+
+
+def _color(text: str, code: str) -> str:
+    return f"{code}{text}{_RESET}"
 
 from unified_planning.engines import ValidationResultStatus
 from unified_planning.io import PDDLReader
@@ -86,10 +96,42 @@ def _find_plan_files() -> List[Path]:
     return files
 
 
+def _print_verbose(record: dict, valid: Optional[bool]) -> None:
+    task        = record.get("task", "")
+    scene_id    = record.get("scene_id", "")
+    instance_id = record.get("instance_id", "")
+    policy_cls  = record.get("policy_cls", "")
+    plan        = record.get("plan")
+
+    if valid is True:
+        verdict = _color("VALID", _GREEN)
+    elif valid is False:
+        verdict = _color("INVALID", _RED)
+    else:
+        verdict = _color("NO PLAN", _GRAY)
+
+    print(f"\n{verdict}  {policy_cls} | {task} | {scene_id} | instance {instance_id}",
+          file=sys.stderr)
+
+    if plan is None:
+        print(_color("  (no plan was found)", _GRAY), file=sys.stderr)
+    else:
+        color = _GREEN if valid else _RED
+        for i, step in enumerate(plan):
+            action = step.get("action", "")
+            params = ", ".join(step.get("parameters", []))
+            print(_color(f"  {i}) {action}({params})", color), file=sys.stderr)
+
+
 def main() -> None:
+    parser = argparse.ArgumentParser(description="Validate initial plans against PDDL problems.")
+    parser.add_argument("-v", "--verbose", action="store_true",
+                        help="Print each plan and its validation result to stderr.")
+    args = parser.parse_args()
+
     plan_files = _find_plan_files()
     if not plan_files:
-        print(f"No initial_plans_*.jsonl files found under {PLANNING_DIR}.", file=sys.stderr)
+        print(f"No initial_plans.jsonl files found under {PLANNING_DIR}.", file=sys.stderr)
         sys.exit(1)
 
     problem_cache: _ProblemCache = {}
@@ -108,6 +150,10 @@ def main() -> None:
                     continue
 
                 valid = _validate_record(record, problem_cache)
+
+                if args.verbose:
+                    _print_verbose(record, valid)
+
                 writer.writerow({
                     "run_id": record.get("run_id", ""),
                     "policy_cls": record.get("policy_cls", ""),
