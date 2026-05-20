@@ -6,6 +6,8 @@ from typing import List, Dict, Any
 
 import pandas as pd
 
+from analysis.execution_log import is_success
+
 
 def is_jsonl_file(path: Path, sample_lines: int = 20) -> bool:
     """Check whether the file appears to contain JSON Lines data."""
@@ -68,7 +70,7 @@ def parse_lines(lines: List[str], source: Path) -> List[Dict[str, Any]]:
             continue
         payload["_source_file"] = str(source)
         payload["_derived_reason"] = derive_reason(payload)
-        payload["_completed_flag"] = bool(payload.get("completed"))
+        payload["_completed_flag"] = is_success(payload)
         records.append(payload)
     return records
 
