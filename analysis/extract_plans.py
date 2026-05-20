@@ -13,32 +13,50 @@ from analysis.execution_log import (
 
 DOMAIN_FILE = "data/planning/igibson/domain.pddl"
 
+# Maps policy_cls to the log message that carries its initial plan.
+_PLAN_MSG = {
+    "DefaultVILAPolicy": "Got VLM plan",
+    "PolicyCPP": "New conformant plan",
+}
+
 # Key that uniquely identifies a task instance within a run.
 _InstanceKey = Tuple[str, str, int]  # (task, scene_id, instance_id)
+
+
+def _parse_action_string(s: str) -> Dict:
+    """Parse a UP ActionInstance str like 'navigate-to(hardback_1, shelf_1)' into a dict."""
+    s = s.strip()
+    paren = s.index("(")
+    action = s[:paren].lower().strip()
+    params_str = s[paren + 1 : s.rindex(")")].strip()
+    parameters = [p.lower().strip() for p in params_str.split(",")] if params_str else []
+    return {"action": action, "parameters": parameters}
 
 
 def _normalize_plan(raw_plan: list) -> List[Dict]:
     """Return the plan as a list of {action, parameters} dicts ready for UP validation.
 
-    Action names and object parameters are lower-cased to match PDDL conventions.
-    Parameters are always a list of strings, even when the log encodes them otherwise.
+    Handles both formats produced by the two policies:
+    - DefaultVILAPolicy: list of {"action": ..., "parameters": [...]} dicts
+    - PolicyCPP: list of str(ActionInstance) strings, e.g. "navigate-to(hardback_1)"
     """
     steps = []
     for step in raw_plan:
-        if not isinstance(step, dict):
-            continue
-        action = str(step.get("action", "")).lower().strip()
-        raw_params = step.get("parameters", [])
-        if isinstance(raw_params, (str, bytes)):
-            parameters = [str(raw_params).lower().strip()]
-        else:
-            parameters = [str(p).lower().strip() for p in raw_params]
-        steps.append({"action": action, "parameters": parameters})
+        if isinstance(step, str):
+            steps.append(_parse_action_string(step))
+        elif isinstance(step, dict):
+            action = str(step.get("action", "")).lower().strip()
+            raw_params = step.get("parameters", [])
+            if isinstance(raw_params, (str, bytes)):
+                parameters = [str(raw_params).lower().strip()]
+            else:
+                parameters = [str(p).lower().strip() for p in raw_params]
+            steps.append({"action": action, "parameters": parameters})
     return steps
 
 
 def _load_initial_plans(path: Path) -> List[dict]:
-    """Read the first VLM plan for each task instance from the execution log.
+    """Read the first plan for each task instance from the execution log.
 
     Returns a list of records, one per unique (task, scene_id, instance_id),
     in the order they first appear in the log.
@@ -47,7 +65,14 @@ def _load_initial_plans(path: Path) -> List[dict]:
     records: List[dict] = []
 
     for log in iter_log_records(path):
-        if log.get("msg") != "Got VLM plan":
+        # DefaultVILAPolicy nests plan data (incl. policy_cls) under args;
+        # PolicyCPP puts everything at the top level.
+        args = log.get("args") if isinstance(log, dict) else None
+        src = args if isinstance(args, dict) else log
+
+        policy_cls = src.get("policy_cls") or log.get("policy_cls")
+        expected_msg = _PLAN_MSG.get(policy_cls)
+        if expected_msg is None or log.get("msg") != expected_msg:
             continue
 
         args = log.get("args") if isinstance(log, dict) else None
@@ -92,8 +117,7 @@ def main() -> None:
             print(f"No VLM plans found in {execution_file}.")
             continue
 
-        timestamp = extract_timestamp(execution_file)
-        output_path = execution_file.parent / f"initial_plans_{timestamp}.jsonl"
+        output_path = execution_file.parent / f"initial_plans.jsonl"
 
         with output_path.open("w") as handle:
             for record in records:
