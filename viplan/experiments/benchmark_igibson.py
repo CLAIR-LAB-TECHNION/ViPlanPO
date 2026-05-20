@@ -31,6 +31,7 @@ from viplan.policies.policy_interface import (
 from viplan.policies.policy_plan import DefaultPlanningPolicy
 from viplan.policies.policy_vila import DefaultVILAPolicy
 from viplan.policies.policy_cpp import PolicyCPP
+from viplan.policies.policy_plan2 import PolicyPlan
 
 goal_templates = {
     'reachable': {
