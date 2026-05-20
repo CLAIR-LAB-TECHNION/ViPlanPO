@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Dict, List, Tuple
+from typing import Dict, List, Optional, Set, Tuple
 
 from analysis.execution_log import (
     PLANNING_DIR,
@@ -13,10 +13,16 @@ from analysis.execution_log import (
 
 DOMAIN_FILE = "data/planning/igibson/domain.pddl"
 
-# Maps policy_cls to the log message that carries its initial plan.
+# Maps policy_cls → log message that carries the initial plan.
 _PLAN_MSG = {
     "DefaultVILAPolicy": "Got VLM plan",
     "PolicyCPP": "New conformant plan",
+}
+
+# Maps policy_cls → log message that signals no plan was found.
+# Only policies listed here trigger the completeness check.
+_NO_PLAN_MSG = {
+    "PolicyCPP": "No conformant plan found for the current belief.",
 }
 
 # Key that uniquely identifies a task instance within a run.
@@ -58,25 +64,57 @@ def _normalize_plan(raw_plan: list) -> List[Dict]:
 def _load_initial_plans(path: Path) -> List[dict]:
     """Read the first plan for each task instance from the execution log.
 
-    Returns a list of records, one per unique (task, scene_id, instance_id),
-    in the order they first appear in the log.
+    For PolicyCPP instances that never found a conformant plan, records are
+    emitted with plan=None.  Raises ValueError if a PolicyCPP instance finishes
+    without either a plan message or a no-plan message.
     """
-    seen: Dict[_InstanceKey, bool] = {}
-    records: List[dict] = []
+    run_id = extract_timestamp(path)
+
+    plan_records: Dict[_InstanceKey, dict] = {}
+    no_plan_keys: Set[_InstanceKey] = set()
+    finished_meta: Dict[_InstanceKey, dict] = {}
 
     for log in iter_log_records(path):
+        msg = log.get("msg")
+
         # DefaultVILAPolicy nests plan data (incl. policy_cls) under args;
         # PolicyCPP puts everything at the top level.
         args = log.get("args") if isinstance(log, dict) else None
         src = args if isinstance(args, dict) else log
-
         policy_cls = src.get("policy_cls") or log.get("policy_cls")
-        expected_msg = _PLAN_MSG.get(policy_cls)
-        if expected_msg is None or log.get("msg") != expected_msg:
+
+        # Track every instance that completed the planning loop.
+        if msg == "Finished planning loop":
+            task, scene_id, instance_id = (
+                log.get("task"), log.get("scene_id"), log.get("instance_id"),
+            )
+            if None not in (task, scene_id, instance_id, policy_cls):
+                key: _InstanceKey = (task, scene_id, instance_id)
+                finished_meta[key] = {
+                    "run_id": run_id,
+                    "policy_cls": policy_cls,
+                    "task": task,
+                    "scene_id": scene_id,
+                    "instance_id": instance_id,
+                    "problem_file": log.get("problem_file"),
+                    "domain_file": DOMAIN_FILE,
+                }
             continue
 
-        args = log.get("args") if isinstance(log, dict) else None
-        src = args if isinstance(args, dict) else log
+        # Track "no plan found" events.
+        if policy_cls and msg == _NO_PLAN_MSG.get(policy_cls):
+            task, scene_id, instance_id = (
+                src.get("task") or log.get("task"),
+                src.get("scene_id") or log.get("scene_id"),
+                src.get("instance_id") or log.get("instance_id"),
+            )
+            no_plan_keys.add((task, scene_id, instance_id))
+            continue
+
+        # Extract the initial plan (first occurrence per instance).
+        expected_msg = _PLAN_MSG.get(policy_cls)
+        if expected_msg is None or msg != expected_msg:
+            continue
 
         raw_plan = src.get("plan")
         if not isinstance(raw_plan, list):
@@ -85,22 +123,36 @@ def _load_initial_plans(path: Path) -> List[dict]:
         task = src.get("task")
         scene_id = src.get("scene_id")
         instance_id = src.get("instance_id")
-        key: _InstanceKey = (task, scene_id, instance_id)
+        key = (task, scene_id, instance_id)
 
-        if key in seen:
+        if key in plan_records:
             continue
-        seen[key] = True
 
-        records.append({
-            "run_id": extract_timestamp(path),
-            "policy_cls": src.get("policy_cls"),
+        plan_records[key] = {
+            "run_id": run_id,
+            "policy_cls": policy_cls,
             "task": task,
             "scene_id": scene_id,
             "instance_id": instance_id,
             "problem_file": src.get("problem_file"),
             "domain_file": DOMAIN_FILE,
             "plan": _normalize_plan(raw_plan),
-        })
+        }
+
+    # Build output: one record per finished instance.
+    records: List[dict] = []
+    for key, meta in finished_meta.items():
+        if key in plan_records:
+            records.append(plan_records[key])
+        elif key in no_plan_keys:
+            records.append({**meta, "plan": None})
+        elif meta["policy_cls"] in _NO_PLAN_MSG:
+            raise ValueError(
+                f"Instance {key} (policy={meta['policy_cls']}) in {path} "
+                f"finished without a plan or a no-plan message."
+            )
+        # Policies without a defined _NO_PLAN_MSG (e.g. DefaultVILAPolicy) are
+        # included only when a plan was found; absent otherwise.
 
     return records
 
@@ -114,10 +166,10 @@ def main() -> None:
     for execution_file in execution_files:
         records = _load_initial_plans(execution_file)
         if not records:
-            print(f"No VLM plans found in {execution_file}.")
+            print(f"No plans found in {execution_file}.")
             continue
 
-        output_path = execution_file.parent / f"initial_plans.jsonl"
+        output_path = execution_file.parent / "initial_plans.jsonl"
 
         with output_path.open("w") as handle:
             for record in records:

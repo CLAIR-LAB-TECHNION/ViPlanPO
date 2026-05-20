@@ -49,7 +49,11 @@ def _build_plan(problem, plan_steps: List[dict]) -> Optional[SequentialPlan]:
     return SequentialPlan(instances)
 
 
-def _validate_record(record: dict, cache: _ProblemCache) -> bool:
+def _validate_record(record: dict, cache: _ProblemCache) -> Optional[bool]:
+    """Return True/False for a valid/invalid plan, or None if no plan was found."""
+    if record.get("plan") is None:
+        return None
+
     domain_file = record.get("domain_file", "")
     problem_file = record.get("problem_file", "")
     plan_steps = record.get("plan", [])
