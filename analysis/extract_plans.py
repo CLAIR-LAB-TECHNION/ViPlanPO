@@ -3,10 +3,14 @@ from __future__ import annotations
 import json
 import re
 from pathlib import Path
-from typing import Iterable, List, Sequence, Tuple
+from typing import Dict, List, Tuple
 
 PLANNING_DIR = Path("results/planning")
+DOMAIN_FILE = "data/planning/igibson/domain.pddl"
 TIMESTAMP_PATTERN = re.compile(r"\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}")
+
+# Key that uniquely identifies a task instance within a run.
+_InstanceKey = Tuple[str, str, int]  # (task, scene_id, instance_id)
 
 
 def _find_execution_files() -> List[Path]:
@@ -27,53 +31,73 @@ def _extract_timestamp(path: Path) -> str:
     return path.stem
 
 
-def _format_plan(plan: Sequence[dict]) -> List[str]:
-    """Convert a plan list into numbered human-readable strings."""
-    formatted_steps: List[str] = []
-    for index, step in enumerate(plan):
-        action = step.get("action", "")
-        parameters = step.get("parameters", [])
-        if isinstance(parameters, Iterable) and not isinstance(parameters, (str, bytes)):
-            parameters_str = ", ".join(map(str, parameters))
+def _normalize_plan(raw_plan: list) -> List[Dict]:
+    """Return the plan as a list of {action, parameters} dicts ready for UP validation.
+
+    Action names and object parameters are lower-cased to match PDDL conventions.
+    Parameters are always a list of strings, even when the log encodes them otherwise.
+    """
+    steps = []
+    for step in raw_plan:
+        if not isinstance(step, dict):
+            continue
+        action = str(step.get("action", "")).lower().strip()
+        raw_params = step.get("parameters", [])
+        if isinstance(raw_params, (str, bytes)):
+            parameters = [str(raw_params).lower().strip()]
         else:
-            parameters_str = str(parameters)
-        formatted_steps.append(f"{index}) {action}({parameters_str})")
-    return formatted_steps
+            parameters = [str(p).lower().strip() for p in raw_params]
+        steps.append({"action": action, "parameters": parameters})
+    return steps
 
 
-def _load_plans(path: Path) -> List[Tuple[dict, List[str]]]:
-    """Read all VLM plans and metadata from the execution log."""
-    plans: List[Tuple[dict, List[str]]] = []
+def _load_initial_plans(path: Path) -> List[dict]:
+    """Read the first VLM plan for each task instance from the execution log.
+
+    Returns a list of records, one per unique (task, scene_id, instance_id),
+    in the order they first appear in the log.
+    """
+    seen: Dict[_InstanceKey, bool] = {}
+    records: List[dict] = []
+
     with path.open("r") as handle:
         for line in handle:
             try:
-                record = json.loads(line)
+                log = json.loads(line)
             except json.JSONDecodeError:
                 continue
 
-            if record.get("msg") != "Got VLM plan":
+            if log.get("msg") != "Got VLM plan":
                 continue
 
-            args = record.get("args") if isinstance(record, dict) else None
-            plan = None
-            if isinstance(args, dict):
-                plan = args.get("plan")
-            if plan is None:
-                plan = record.get("plan")
+            args = log.get("args") if isinstance(log, dict) else None
+            src = args if isinstance(args, dict) else log
 
-            if not isinstance(plan, list):
+            raw_plan = src.get("plan")
+            if not isinstance(raw_plan, list):
                 continue
 
-            metadata_source = args if isinstance(args, dict) else record
-            metadata = {
-                "policy_cls": metadata_source.get("policy_cls"),
-                "scene_id": metadata_source.get("scene_id"),
-                "instance_id": metadata_source.get("instance_id"),
-                "problem_file": metadata_source.get("problem_file"),
-            }
+            task = src.get("task")
+            scene_id = src.get("scene_id")
+            instance_id = src.get("instance_id")
+            key: _InstanceKey = (task, scene_id, instance_id)
 
-            plans.append((metadata, _format_plan(plan)))
-    return plans
+            if key in seen:
+                continue
+            seen[key] = True
+
+            records.append({
+                "run_id": _extract_timestamp(path),
+                "policy_cls": src.get("policy_cls"),
+                "task": task,
+                "scene_id": scene_id,
+                "instance_id": instance_id,
+                "problem_file": src.get("problem_file"),
+                "domain_file": DOMAIN_FILE,
+                "plan": _normalize_plan(raw_plan),
+            })
+
+    return records
 
 
 def main() -> None:
@@ -83,30 +107,19 @@ def main() -> None:
         return
 
     for execution_file in execution_files:
-        plans = _load_plans(execution_file)
-        if not plans:
+        records = _load_initial_plans(execution_file)
+        if not records:
             print(f"No VLM plans found in {execution_file}.")
             continue
 
         timestamp = _extract_timestamp(execution_file)
-        output_path = execution_file.parent / f"plans_{timestamp}.txt"
+        output_path = execution_file.parent / f"initial_plans_{timestamp}.jsonl"
 
         with output_path.open("w") as handle:
-            for index, (metadata, plan) in enumerate(plans, start=1):
-                handle.write(
-                    "Plan {index} (policy_cls={policy_cls}, scene_id={scene_id}, instance_id={instance_id}, problem_file={problem_file}):\n".format(
-                        index=index,
-                        policy_cls=metadata.get("policy_cls"),
-                        scene_id=metadata.get("scene_id"),
-                        instance_id=metadata.get("instance_id"),
-                        problem_file=metadata.get("problem_file"),
-                    )
-                )
-                handle.write("\n".join(plan))
-                if index < len(plans):
-                    handle.write("\n\n")
+            for record in records:
+                handle.write(json.dumps(record) + "\n")
 
-        print(f"Saved {len(plans)} plan(s) to {output_path}")
+        print(f"Saved {len(records)} initial plan(s) to {output_path}")
 
 
 if __name__ == "__main__":
