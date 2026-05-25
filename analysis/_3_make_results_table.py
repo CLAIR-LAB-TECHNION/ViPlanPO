@@ -11,8 +11,8 @@ import pandas as pd
 warnings.filterwarnings("ignore", category=UserWarning, module="unified_planning")
 
 from analysis.execution_log import PLANNING_DIR, find_execution_files
-from analysis.extract_execution_stats import _extract_instance_stats
-from analysis.validate_plans import _find_plan_files, _validate_record
+from analysis._1_a_extract_execution_stats import _extract_instance_stats
+from analysis._2_b_validate_plans import _find_plan_files, _validate_record
 
 # Display ordering — entries absent from the data are silently skipped.
 DIFFICULTY_ORDER = ["simple", "medium", "hard"]
@@ -126,9 +126,14 @@ def build_table(stats: pd.DataFrame, valid: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(data, index=col_index).T
 
 
+TASKS = {"sorting_books", "cleaning_out_drawers"}
+
+
 def main() -> None:
     stats = load_stats()
     valid = load_validation()
+    stats = stats[stats["task"].isin(TASKS)]
+    valid = valid[valid["task"].isin(TASKS)]
     table = build_table(stats, valid)
 
     latex = table.to_latex(
