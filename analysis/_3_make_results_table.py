@@ -30,7 +30,7 @@ METRICS = [
     "Planning time",
 ]
 
-OUTPUT_PATH = Path("results/results_table.tex")
+OUTPUT_PATH = Path(__file__).parent.parent / "../RoVLaP-NeuS-2026-/content/results_table.tex"
 
 
 def _path_meta(path: Path) -> Tuple[str, str]:
