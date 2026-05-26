@@ -291,20 +291,20 @@ def equality_to_predicate(domain_path: str, problem_path: str, output_path: str)
 def get_mapping_from_compiled_actions_to_original_actions(
     compiled_problem: Problem, original_problem: Problem
 ) -> Callable[[ActionInstance], ActionInstance]:
-    # create a dictionary mapping compiled actions to original actions
-    action_mapping = {}
+    # key by action name so planner-internal problem copies don't break the lookup
+    action_name_mapping = {}
     original_action_names = [action.name for action in original_problem.actions]
     for action in compiled_problem.actions:
         action_name = action.name
         for original_action_name in original_action_names:
             if action_name.startswith(original_action_name):
-                action_mapping[action] = original_problem.action(original_action_name)
+                action_name_mapping[action_name] = original_problem.action(original_action_name)
                 break
-    
+
     def map_compiled_action_to_original_action(
         compiled_action_instance: ActionInstance
     ) -> ActionInstance:
-        original_action = action_mapping[compiled_action_instance.action]
+        original_action = action_name_mapping[compiled_action_instance.action.name]
         params_original_problem = tuple()
         for param in compiled_action_instance.actual_parameters:
             obj = original_problem.object(param.object().name)
