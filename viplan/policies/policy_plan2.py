@@ -232,7 +232,7 @@ class PolicyPlan(Policy):
                 "Replanning executed.", extra=log_plan_extra | {"replan_reason": replan_reason}
             )
 
-        if self.current_plan is None:
+        if not self.current_plan:
             self.task_logger.info(
                 "No plan. Exploring", extra=log_plan_extra
             )
