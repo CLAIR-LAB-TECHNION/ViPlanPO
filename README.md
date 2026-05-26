@@ -78,7 +78,7 @@ The Household environment is instead based on a custom version of [iGibson](http
 To install the environment, first clone our fork of iGibson:
 
 ```bash
-git clone --depth 1 --single-branch --branch release_viplan https://github.com/nicoladainese96/iGibson.git ./iGibson --recursive
+git clone --depth 1 --single-branch --branch release_viplan https://github.com/f1ren/iGibson.git ./iGibson --recursive
 git clone https://github.com/guyazran/behavior.git
 ```
 
