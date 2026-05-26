@@ -89,6 +89,15 @@ def load_validation() -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
+def _iqm(series: pd.Series) -> float:
+    """Compute the interquartile mean of a pandas Series, ignoring NaNs."""
+    from scipy import stats
+    s = series.dropna()
+    if s.empty:
+        return float("nan")
+    return float(stats.trim_mean(s, 0.25))
+
+
 def build_table(stats: pd.DataFrame, valid: pd.DataFrame) -> pd.DataFrame:
     KEY = ["run_id", "policy_cls", "task", "scene_id", "instance_id",
            "difficulty", "policy_dir"]
@@ -109,15 +118,15 @@ def build_table(stats: pd.DataFrame, valid: pd.DataFrame) -> pd.DataFrame:
             grp = df[(df["difficulty"] == diff) & (df["policy_dir"] == pol)]
             n = len(grp)
             data["Execution success rate"].append(
-                grp["success"].mean() * 100 if n else float("nan")
+                _iqm(grp["success"]) * 100 if n else float("nan")
             )
             # NaN in initial_plan_valid (instances absent from validation) are
             # excluded from mean() automatically — distinct from 0.0 (no plan).
             data["First-plan satisficing"].append(
-                grp["initial_plan_valid"].mean() * 100 if n else float("nan")
+                _iqm(grp["initial_plan_valid"]) * 100 if n else float("nan")
             )
             data["Num actions taken"].append(
-                grp["action_count"].mean() if n else float("nan")
+                _iqm(grp["action_count"]) if n else float("nan")
             )
             data["Planning time"].append(
                 grp["planning_time"].median() if n else float("nan")
