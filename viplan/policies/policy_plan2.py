@@ -163,6 +163,7 @@ class PolicyPlan(Policy):
             model=model,
             goal_string=goal_string,
             logger=self.logger,
+            tasks_logger=self.task_logger,
         )
         
         # log all relevant initialization info
@@ -236,7 +237,7 @@ class PolicyPlan(Policy):
             self.task_logger.info(
                 "No plan. Exploring", extra=log_plan_extra
             )
-            return None
+            return self.fallback_vila_policy.next_action(observation, log_extra)
 
         # get the next action from the current plan
         next_action = self.current_plan.pop(0)
