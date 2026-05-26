@@ -112,13 +112,42 @@ def build_table(stats: pd.DataFrame, valid: pd.DataFrame) -> pd.DataFrame:
         for p in policies
     ])
 
+    _WARN = "\033[33m⚠️  WARNING"
+    _RST  = "\033[0m"
+
+    INSTANCE_KEY = ["task", "scene_id", "instance_id"]
+    for diff in difficulties:
+        instance_sets: Dict[str, set] = {}
+        for pol in policies:
+            grp = df[(df["difficulty"] == diff) & (df["policy_dir"] == pol)]
+            keys = list(map(tuple, grp[INSTANCE_KEY].values))
+            duplicates = {k for k in keys if keys.count(k) > 1}
+            if duplicates:
+                print(
+                    f"{_WARN} [{diff}] '{pol}': {len(duplicates)} instance(s) appear more than once: {duplicates}.{_RST}",
+                    file=sys.stderr,
+                )
+            instance_sets[pol] = set(keys)
+
+        reference = next(iter(instance_sets.values()))
+        for pol, inst_set in instance_sets.items():
+            if inst_set != reference:
+                only_in_ref   = reference - inst_set
+                only_in_other = inst_set - reference
+                ref_pol = policies[0]
+                print(
+                    f"{_WARN} [{diff}]: instance set mismatch between '{ref_pol}' and '{pol}'. "
+                    f"Only in '{ref_pol}': {len(only_in_ref)}, only in '{pol}': {len(only_in_other)}.{_RST}",
+                    file=sys.stderr,
+                )
+
     data: Dict[str, List] = {m: [] for m in METRICS}
     for diff in difficulties:
         for pol in policies:
             grp = df[(df["difficulty"] == diff) & (df["policy_dir"] == pol)]
             n = len(grp)
             data["Execution success rate"].append(
-                _iqm(grp["success"]) * 100 if n else float("nan")
+                grp["success"].mean() * 100 if n else float("nan")
             )
             # NaN in initial_plan_valid (instances absent from validation) are
             # excluded from mean() automatically — distinct from 0.0 (no plan).
