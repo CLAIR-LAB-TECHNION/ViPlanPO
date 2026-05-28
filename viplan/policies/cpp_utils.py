@@ -285,12 +285,41 @@ def extract_conformant_plan(p_planNode):
     return out
 
 
+def _goals_satisfied_in_belief(problem: ContingentProblem, possible_init_states) -> bool:
+    """Return True when every belief state already satisfies all goals.
+
+    Goals are expressed over derived neg_ fluents after _rewrite_negative_goals;
+    possible_init_states uses original-problem fluent keys.  The inv_neg map
+    bridges the two namespaces.
+    """
+    neg_fluent_map = getattr(problem, '_neg_fluent_map', {})
+    inv_neg = {v: k for k, v in neg_fluent_map.items()}  # neg_fl -> orig_fl
+
+    for goal in problem.goals:
+        if not goal.is_fluent_exp():
+            return False  # complex formula — let the planner evaluate
+        fl = goal.fluent()
+        for s in possible_init_states:
+            if fl in inv_neg:
+                # neg_fl(args) holds iff orig_fl(args) is False
+                orig_fa = inv_neg[fl](*goal.args)
+                if s.get(orig_fa, True):  # True or unknown → goal not met
+                    return False
+            else:
+                if not s.get(goal, False):  # False or unknown → goal not met
+                    return False
+    return True
+
+
 def cpor_solve(problem: ContingentProblem,
                possible_init_states: Iterable[Dict[FNode, bool]],
                timeout: float,
                task_logger = None,
                log_plan_extra: Dict[str, str] = None):
-    
+
+    if _goals_satisfied_in_belief(problem, possible_init_states):
+        return None
+
     for i in range(2):
         # set initial state constraints in the contingent problem
         # based on all states selected so far.
