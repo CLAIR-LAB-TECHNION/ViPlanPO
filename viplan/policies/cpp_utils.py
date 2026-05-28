@@ -1,4 +1,5 @@
 import heapq
+from itertools import product as iproduct
 from typing import List, Dict, Generator, Tuple, Iterable
 
 from unified_planning.shortcuts import *
@@ -104,10 +105,87 @@ def _do_required_compilations(problem: Problem) -> Problem:
     return problem
 
 
+def _rewrite_negative_goals(problem: Problem) -> Problem:
+    """Replace negative goal literals with positive auxiliary fluents.
+
+    CPORLib's GetCNFClauses throws NotImplementedException on Not-formulas.
+    For every Not(f(args)) in a goal, this introduces a fluent neg_f(args)
+    whose value is always the negation of f(args), then rewrites the goal to
+    use neg_f directly.
+    """
+    em = problem.environment.expression_manager
+    problem = problem.clone()
+
+    goals = list(problem.goals)
+    problem.clear_goals()
+
+    # Collect every fluent that appears negated in a goal
+    neg_fluent_map: Dict = {}  # Fluent -> auxiliary Fluent
+
+    def _scan(formula):
+        if formula.is_not() and formula.arg(0).is_fluent_exp():
+            fl = formula.arg(0).fluent()
+            if fl not in neg_fluent_map:
+                sig_kwargs = {p.name: p.type for p in fl.signature}
+                neg_fluent_map[fl] = Fluent(f"neg_{fl.name}", fl.type, **sig_kwargs)
+        for arg in formula.args:
+            _scan(arg)
+
+    for g in goals:
+        _scan(g)
+
+    if not neg_fluent_map:
+        for g in goals:
+            problem.add_goal(g)
+        return problem
+
+    # Register new fluents and set their initial values
+    for fl, neg_fl in neg_fluent_map.items():
+        problem.add_fluent(neg_fl, default_initial_value=False)
+        obj_lists = [list(problem.objects(p.type)) for p in fl.signature]
+        for combo in iproduct(*obj_lists):
+            fa = fl(*combo)
+            iv = problem.initial_value(fa)
+            iv_bool = iv.bool_constant_value() if (iv is not None and iv.is_bool_constant()) else False
+            problem.set_initial_value(neg_fl(*combo), not iv_bool)
+
+    # Mirror every action effect that touches a rewritten fluent
+    for action in problem.actions:
+        new_effects = []
+        for effect in action.effects:
+            eff_fl = effect.fluent.fluent()
+            if eff_fl in neg_fluent_map and effect.value.is_bool_constant():
+                neg_fa = neg_fluent_map[eff_fl](*effect.fluent.args)
+                new_effects.append((neg_fa, not effect.value.bool_constant_value(), effect.condition))
+        for neg_fa, neg_val, cond in new_effects:
+            action.add_effect(neg_fa, neg_val, cond)
+
+    # Rewrite goal formulas
+    def _rewrite(formula):
+        if formula.is_not() and formula.arg(0).is_fluent_exp():
+            fa = formula.arg(0)
+            fl = fa.fluent()
+            if fl in neg_fluent_map:
+                return neg_fluent_map[fl](*fa.args)
+        if formula.is_and():
+            return em.And([_rewrite(a) for a in formula.args])
+        if formula.is_or():
+            return em.Or([_rewrite(a) for a in formula.args])
+        if formula.is_not():
+            return em.Not(_rewrite(formula.arg(0)))
+        return formula
+
+    for g in goals:
+        problem.add_goal(_rewrite(g))
+
+    return problem
+
+
 def to_contingent_problem(problem: Problem) -> ContingentProblem:
     cp = ContingentProblem(f"Contingent_{problem.name}")
 
     problem = _do_required_compilations(problem)
+    problem = _rewrite_negative_goals(problem)
 
     # Objects
     cp.add_objects(problem.all_objects)
