@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import math
+import re
 import sys
 import warnings
 from pathlib import Path
@@ -145,11 +147,14 @@ def build_table(stats: pd.DataFrame, valid: pd.DataFrame) -> pd.DataFrame:
     difficulties = [d for d in DIFFICULTY_ORDER if d in df["difficulty"].unique()]
     policies     = [p for p in POLICY_ORDER     if p in df["policy_dir"].unique()]
 
-    col_index = pd.MultiIndex.from_tuples([
-        (d.capitalize(), POLICY_LABEL.get(p, p))
-        for d in difficulties
-        for p in policies
-    ])
+    if len(difficulties) == 1:
+        col_index = pd.Index([POLICY_LABEL.get(p, p) for p in policies])
+    else:
+        col_index = pd.MultiIndex.from_tuples([
+            (d.capitalize(), POLICY_LABEL.get(p, p))
+            for d in difficulties
+            for p in policies
+        ])
 
     data: Dict[str, List] = {m: [] for m in METRICS}
     for diff in difficulties:
@@ -177,6 +182,44 @@ def build_table(stats: pd.DataFrame, valid: pd.DataFrame) -> pd.DataFrame:
 TASKS = {"sorting_books", "cleaning_out_drawers"}
 
 
+def _makecell(label: str) -> str:
+    """Wrap a column label in LaTeX \\makecell with a line break at the first space."""
+    idx = label.find(' ')
+    if idx == -1:
+        return label
+    return f'\\makecell{{{label[:idx]}\\\\{label[idx + 1:]}}}'
+
+
+def _postprocess_latex(latex: str) -> str:
+    """Replace column headers with \\makecell line-breaks and bold the max per row."""
+    for label in POLICY_LABEL.values():
+        latex = latex.replace(label, _makecell(label))
+
+    _BOLD_MIN = {"Num actions taken", "Planning time"}
+
+    out_lines = []
+    for line in latex.splitlines():
+        if '&' in line and line.rstrip().endswith('\\\\'):
+            parts = line.split('&')
+            row_label = parts[0].strip()
+            nums = []
+            for cell in parts[1:]:
+                m = re.search(r'-?\d+(?:\.\d+)?', cell.rstrip('\\').strip())
+                nums.append(float(m.group()) if m else float('nan'))
+            valid = [v for v in nums if not math.isnan(v)]
+            if valid:
+                best = min(valid) if row_label in _BOLD_MIN else max(valid)
+                new_cells = []
+                for cell, num in zip(parts[1:], nums):
+                    if not math.isnan(num) and num == best:
+                        new_cells.append(re.sub(r'(-?\d+(?:\.\d+)?)', r'\\textbf{\1}', cell, count=1))
+                    else:
+                        new_cells.append(cell)
+                line = parts[0] + '&' + '&'.join(new_cells)
+        out_lines.append(line)
+    return '\n'.join(out_lines)
+
+
 def main() -> None:
     stats = load_stats()
     valid = load_validation()
@@ -190,13 +233,13 @@ def main() -> None:
     _warn_instance_mismatches(stats)
     table = build_table(stats, valid)
 
-    latex = table.to_latex(
+    latex = _postprocess_latex(table.to_latex(
         float_format="%.1f",
         multicolumn=True,
         multicolumn_format="c",
         multirow=True,
         na_rep="--",
-    )
+    ))
 
     OUTPUT_PATH.parent.mkdir(parents=True, exist_ok=True)
     OUTPUT_PATH.write_text(latex)
