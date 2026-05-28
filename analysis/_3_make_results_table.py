@@ -187,7 +187,7 @@ def _makecell(label: str) -> str:
     idx = label.find(' ')
     if idx == -1:
         return label
-    return f'\\makecell{{{label[:idx]}\\\\{label[idx + 1:]}}}'
+    return f'\\shortstack{{{label[:idx]}\\\\{label[idx + 1:]}}}'
 
 
 def _postprocess_latex(latex: str) -> str:
