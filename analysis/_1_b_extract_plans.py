@@ -17,6 +17,7 @@ DOMAIN_FILE = "data/planning/igibson/domain.pddl"
 _PLAN_MSG = {
     "DefaultVILAPolicy": "Got VLM plan",
     "PolicyCPP": "New conformant plan",
+    "PolicyPlan": "New conformant plan",
 }
 
 # Maps policy_cls → log message that signals no plan was found.

@@ -98,28 +98,23 @@ def _iqm(series: pd.Series) -> float:
     return float(stats.trim_mean(s, 0.25))
 
 
-def build_table(stats: pd.DataFrame, valid: pd.DataFrame) -> pd.DataFrame:
-    KEY = ["run_id", "policy_cls", "task", "scene_id", "instance_id",
-           "difficulty", "policy_dir"]
-    df = stats.merge(valid[KEY + ["initial_plan_valid"]], on=KEY, how="left")
+def _warn_instance_mismatches(stats: pd.DataFrame) -> None:
+    """Warn about duplicate or mismatched instance sets across policies.
 
-    difficulties = [d for d in DIFFICULTY_ORDER if d in df["difficulty"].unique()]
-    policies     = [p for p in POLICY_ORDER     if p in df["policy_dir"].unique()]
-
-    col_index = pd.MultiIndex.from_tuples([
-        (d.capitalize(), POLICY_LABEL.get(p, p))
-        for d in difficulties
-        for p in policies
-    ])
-
+    Runs on the full (unfiltered) stats so that extra tasks present in only
+    some policies are detected before any task filter silently drops them.
+    """
     _WARN = "\033[33m⚠️  WARNING"
     _RST  = "\033[0m"
 
+    difficulties = [d for d in DIFFICULTY_ORDER if d in stats["difficulty"].unique()]
+    policies     = [p for p in POLICY_ORDER     if p in stats["policy_dir"].unique()]
     INSTANCE_KEY = ["task", "scene_id", "instance_id"]
+
     for diff in difficulties:
         instance_sets: Dict[str, set] = {}
         for pol in policies:
-            grp = df[(df["difficulty"] == diff) & (df["policy_dir"] == pol)]
+            grp = stats[(stats["difficulty"] == diff) & (stats["policy_dir"] == pol)]
             keys = list(map(tuple, grp[INSTANCE_KEY].values))
             duplicates = {k for k in keys if keys.count(k) > 1}
             if duplicates:
@@ -140,6 +135,21 @@ def build_table(stats: pd.DataFrame, valid: pd.DataFrame) -> pd.DataFrame:
                     f"Only in '{ref_pol}': {len(only_in_ref)}, only in '{pol}': {len(only_in_other)}.{_RST}",
                     file=sys.stderr,
                 )
+
+
+def build_table(stats: pd.DataFrame, valid: pd.DataFrame) -> pd.DataFrame:
+    KEY = ["run_id", "policy_cls", "task", "scene_id", "instance_id",
+           "difficulty", "policy_dir"]
+    df = stats.merge(valid[KEY + ["initial_plan_valid"]], on=KEY, how="left")
+
+    difficulties = [d for d in DIFFICULTY_ORDER if d in df["difficulty"].unique()]
+    policies     = [p for p in POLICY_ORDER     if p in df["policy_dir"].unique()]
+
+    col_index = pd.MultiIndex.from_tuples([
+        (d.capitalize(), POLICY_LABEL.get(p, p))
+        for d in difficulties
+        for p in policies
+    ])
 
     data: Dict[str, List] = {m: [] for m in METRICS}
     for diff in difficulties:
@@ -170,8 +180,14 @@ TASKS = {"sorting_books", "cleaning_out_drawers"}
 def main() -> None:
     stats = load_stats()
     valid = load_validation()
+    dropped = sorted(set(stats["task"].unique()) - TASKS)
+    if dropped:
+        _WARN = "\033[33m⚠️  WARNING"
+        _RST  = "\033[0m"
+        print(f"{_WARN}: tasks present in data but excluded from table: {dropped}.{_RST}", file=sys.stderr)
     stats = stats[stats["task"].isin(TASKS)]
     valid = valid[valid["task"].isin(TASKS)]
+    _warn_instance_mismatches(stats)
     table = build_table(stats, valid)
 
     latex = table.to_latex(
