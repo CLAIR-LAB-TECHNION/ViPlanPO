@@ -137,6 +137,7 @@ def _rewrite_negative_goals(problem: Problem) -> Problem:
     if not neg_fluent_map:
         for g in goals:
             problem.add_goal(g)
+        problem._neg_fluent_map = {}
         return problem
 
     # Register new fluents and set their initial values
@@ -178,6 +179,7 @@ def _rewrite_negative_goals(problem: Problem) -> Problem:
     for g in goals:
         problem.add_goal(_rewrite(g))
 
+    problem._neg_fluent_map = neg_fluent_map  # consumed by set_cp_initial_state_constraints_from_belief
     return problem
 
 
@@ -186,6 +188,7 @@ def to_contingent_problem(problem: Problem) -> ContingentProblem:
 
     problem = _do_required_compilations(problem)
     problem = _rewrite_negative_goals(problem)
+    cp._neg_fluent_map = problem._neg_fluent_map  # propagate so set_cp_initial_state_constraints_from_belief can sync derived fluents
 
     # Objects
     cp.add_objects(problem.all_objects)
@@ -222,12 +225,19 @@ def set_cp_initial_state_constraints_from_belief(
     problem._or_initial_constraints.clear()
     problem._oneof_initial_constraints.clear()
 
+    # Fluent -> auxiliary neg_Fluent mapping produced by _rewrite_negative_goals
+    neg_fluent_map = getattr(problem, '_neg_fluent_map', {})
+
     if version == 0:
         # set all known fluents
         unknown_fluents = set()
         for f, v in possible_init_states[0].items():
             if all(v == s.get(f, None) for s in possible_init_states):
                 problem.set_initial_value(f, v)
+                # keep the derived neg_fluent in sync
+                fl = f.fluent()
+                if fl in neg_fluent_map:
+                    problem.set_initial_value(neg_fluent_map[fl](*f.args), not v)
             else:
                 unknown_fluents.add(f)
     elif version == 1:
@@ -235,11 +245,18 @@ def set_cp_initial_state_constraints_from_belief(
     else:
         raise ValueError(f"Unknown version {version} for setting initial state constraints")
 
-    # Encode as a disjunction of full-state conjunctions
-    # only include fluents with unknown values
+    # Encode as a disjunction of full-state conjunctions.
+    # Include derived neg_fluents in each conjunction so the planner
+    # sees consistent values for auxiliary fluents across all belief states.
     formulas = []
     for s in possible_init_states:
-        lits = [(f if s[f] else Not(f)) for f in unknown_fluents]
+        lits = []
+        for f in unknown_fluents:
+            lits.append(f if s[f] else Not(f))
+            fl = f.fluent()
+            if fl in neg_fluent_map:
+                neg_f = neg_fluent_map[fl](*f.args)
+                lits.append(neg_f if not s[f] else Not(neg_f))
         if lits:
             formulas.append(And(*lits))
     if formulas:
