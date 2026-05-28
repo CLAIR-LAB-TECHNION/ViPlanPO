@@ -13,7 +13,10 @@ def find_execution_files() -> List[Path]:
     """Return all ``execution.jsonl`` files under planning results sorted by path."""
     if not PLANNING_DIR.exists():
         return []
-    candidates = list(PLANNING_DIR.rglob("execution.jsonl"))
+    candidates = [
+        p for p in PLANNING_DIR.rglob("execution.jsonl")
+        if "backup" not in p.parts
+    ]
     candidates.sort(key=lambda path: path.as_posix())
     return candidates
 

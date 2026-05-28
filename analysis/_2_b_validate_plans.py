@@ -91,7 +91,10 @@ def _validate_record(record: dict, cache: _ProblemCache) -> Optional[bool]:
 def _find_plan_files() -> List[Path]:
     if not PLANNING_DIR.exists():
         return []
-    files = list(PLANNING_DIR.rglob("initial_plans.jsonl"))
+    files = [
+        p for p in PLANNING_DIR.rglob("initial_plans.jsonl")
+        if "backup" not in p.parts
+    ]
     files.sort(key=lambda p: p.as_posix())
     return files
 
