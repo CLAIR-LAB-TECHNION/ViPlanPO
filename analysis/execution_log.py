@@ -30,16 +30,27 @@ def extract_timestamp(path: Path) -> str:
 
 
 def iter_log_records(path: Path) -> Iterator[Dict[str, Any]]:
-    """Yield parsed JSON records from a JSONL execution log, skipping invalid lines."""
-    with path.open("r") as handle:
-        for line in handle:
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                yield json.loads(line)
-            except json.JSONDecodeError:
-                continue
+    """Yield parsed JSON records from a JSONL execution log, skipping invalid lines.
+
+    Also reads rotated siblings (execution.jsonl.1, .2, …) from oldest to newest
+    so that log rotation is transparent to callers.
+    """
+    # Collect rotated files in descending numeric order (highest = oldest).
+    rotated: List[Path] = sorted(
+        path.parent.glob(path.name + ".*"),
+        key=lambda p: int(p.suffix.lstrip(".")) if p.suffix.lstrip(".").isdigit() else 0,
+        reverse=True,
+    )
+    for src in [*rotated, path]:
+        with src.open("r") as handle:
+            for line in handle:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    yield json.loads(line)
+                except json.JSONDecodeError:
+                    continue
 
 
 def is_success(entry: Dict[str, Any]) -> bool:
