@@ -182,7 +182,7 @@ def build_table(stats: pd.DataFrame, valid: pd.DataFrame) -> pd.DataFrame:
 TASKS: Dict[str, set] = {
     "simple": {"sorting_books", "cleaning_out_drawers", "locking_every_door"},
     "medium": {"packing_food_for_work", "putting_away_toys", "sorting_groceries"},
-    "hard":   {"organizing_boxes_in_garage", "putting_away_toys"},
+    "hard":   {"organizing_boxes_in_garage", "putting_away_toys", "organizing_file_cabinet"},
 }
 
 
