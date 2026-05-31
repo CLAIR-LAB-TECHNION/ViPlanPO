@@ -179,7 +179,11 @@ def build_table(stats: pd.DataFrame, valid: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(data, index=col_index).T
 
 
-TASKS = {"sorting_books", "cleaning_out_drawers", "locking_every_door"}
+TASKS: Dict[str, set] = {
+    "simple": {"sorting_books", "cleaning_out_drawers", "locking_every_door"},
+    "medium": {"packing_food_for_work", "putting_away_toys", "sorting_groceries"},
+    "hard":   {"organizing_boxes_in_garage", "putting_away_toys"},
+}
 
 
 def _makecell(label: str) -> str:
@@ -220,16 +224,29 @@ def _postprocess_latex(latex: str) -> str:
     return '\n'.join(out_lines)
 
 
+def _allowed_mask(df: pd.DataFrame) -> pd.Series:
+    return pd.Series(
+        [task in TASKS.get(diff, set()) for diff, task in zip(df["difficulty"], df["task"])],
+        index=df.index,
+    )
+
+
 def main() -> None:
     stats = load_stats()
     valid = load_validation()
-    dropped = sorted(set(stats["task"].unique()) - TASKS)
+
+    mask = _allowed_mask(stats)
+    dropped = sorted({
+        (diff, task)
+        for diff, task in zip(stats.loc[~mask, "difficulty"], stats.loc[~mask, "task"])
+    })
     if dropped:
         _WARN = "\033[33m⚠️  WARNING"
         _RST  = "\033[0m"
-        print(f"{_WARN}: tasks present in data but excluded from table: {dropped}.{_RST}", file=sys.stderr)
-    stats = stats[stats["task"].isin(TASKS)]
-    valid = valid[valid["task"].isin(TASKS)]
+        print(f"{_WARN}: (difficulty, task) pairs in data but excluded from table: {dropped}.{_RST}", file=sys.stderr)
+
+    stats = stats[mask]
+    valid = valid[_allowed_mask(valid)]
     _warn_instance_mismatches(stats)
     table = build_table(stats, valid)
 
