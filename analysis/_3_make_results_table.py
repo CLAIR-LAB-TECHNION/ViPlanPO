@@ -167,7 +167,7 @@ def build_table(stats: pd.DataFrame, valid: pd.DataFrame) -> pd.DataFrame:
             # NaN in initial_plan_valid (instances absent from validation) are
             # excluded from mean() automatically — distinct from 0.0 (no plan).
             data["First-plan satisficing"].append(
-                _iqm(grp["initial_plan_valid"]) * 100 if n else float("nan")
+                grp["initial_plan_valid"].mean() * 100 if n else float("nan")
             )
             data["Num actions taken"].append(
                 _iqm(grp["action_count"]) if n else float("nan")
