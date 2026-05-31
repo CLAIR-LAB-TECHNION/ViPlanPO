@@ -14,7 +14,7 @@ from analysis.execution_log import (
 )
 
 # CSV columns — the first five form the unique key matching validate_plans output.
-COLUMNS = ["run_id", "policy_cls", "task", "scene_id", "instance_id", "success", "action_count", "planning_time"]
+COLUMNS = ["run_id", "policy_cls", "task", "scene_id", "instance_id", "success", "action_count", "planning_time", "planner_calls"]
 
 # Per-instance key: (run_id, policy_cls, task, scene_id, instance_id)
 _InstanceKey = Tuple[str, str, str, str, int]
@@ -31,6 +31,8 @@ def _extract_instance_stats(path: Path) -> List[dict]:
     # Prefer planning_time_seconds (explicit planner events) over compute_time (VLM calls).
     planner_times: Dict[_InstanceKey, float] = {}   # from planning events
     compute_times: Dict[_InstanceKey, float] = {}   # from Next action decided
+    planner_call_counts: Dict[_InstanceKey, int] = {}   # Replanning executed.
+    vlm_plan_counts: Dict[_InstanceKey, int] = {}        # Got VLM plan (VILA fallback)
     finish_entries: Dict[_InstanceKey, dict] = {}
 
     for entry in iter_log_records(path):
@@ -39,6 +41,14 @@ def _extract_instance_stats(path: Path) -> List[dict]:
         scene_id = entry.get("scene_id")
         instance_id = entry.get("instance_id")
         policy_cls = entry.get("policy_cls")
+
+        # "Got VLM plan" stores context fields inside args, not at top level.
+        if msg == "Got VLM plan":
+            args = entry.get("args") or {}
+            task = args.get("task")
+            scene_id = args.get("scene_id")
+            instance_id = args.get("instance_id")
+            policy_cls = args.get("policy_cls")
 
         if None in (task, scene_id, instance_id, policy_cls):
             continue
@@ -52,6 +62,11 @@ def _extract_instance_stats(path: Path) -> List[dict]:
             pt = entry.get("planning_time_seconds")
             if pt is not None:
                 planner_times[key] = planner_times.get(key, 0.0) + float(pt)
+            if msg == "Replanning executed.":
+                planner_call_counts[key] = planner_call_counts.get(key, 0) + 1
+
+        elif msg == "Got VLM plan":
+            vlm_plan_counts[key] = vlm_plan_counts.get(key, 0) + 1
 
         elif msg == "Next action decided":
             ct = entry.get("compute_time")
@@ -66,6 +81,8 @@ def _extract_instance_stats(path: Path) -> List[dict]:
         run_id_k, policy_cls_k, task_k, scene_id_k, instance_id_k = key
         # Use explicit planner time if available; fall back to VLM compute time.
         planning_time = planner_times.get(key) if key in planner_times else compute_times.get(key, 0.0)
+        # Use symbolic planner invocations; fall back to VLM plan calls for VILA-only instances.
+        planner_calls = planner_call_counts.get(key) or vlm_plan_counts.get(key, 0)
         records.append({
             "run_id": run_id_k,
             "policy_cls": policy_cls_k,
@@ -75,6 +92,7 @@ def _extract_instance_stats(path: Path) -> List[dict]:
             "success": is_success(finish_entry),
             "action_count": action_counts.get(key, 0),
             "planning_time": planning_time,
+            "planner_calls": planner_calls,
         })
 
     return records

@@ -29,7 +29,7 @@ METRICS = [
     "Execution success rate",
     "First-plan satisficing",
     "Num actions taken",
-    "Planning time",
+    "Planner calls",
 ]
 
 OUTPUT_PATH = Path(__file__).parent.parent / "../RoVLaP-NeuS-2026-/content/results_table.tex"
@@ -172,8 +172,8 @@ def build_table(stats: pd.DataFrame, valid: pd.DataFrame) -> pd.DataFrame:
             data["Num actions taken"].append(
                 _iqm(grp["action_count"]) if n else float("nan")
             )
-            data["Planning time"].append(
-                grp["planning_time"].median() if n else float("nan")
+            data["Planner calls"].append(
+                _iqm(grp["planner_calls"]) if n else float("nan")
             )
 
     return pd.DataFrame(data, index=col_index).T
@@ -195,7 +195,7 @@ def _postprocess_latex(latex: str) -> str:
     for label in POLICY_LABEL.values():
         latex = latex.replace(label, _makecell(label))
 
-    _BOLD_MIN = {"Num actions taken", "Planning time"}
+    _BOLD_MIN = {"Num actions taken", "Planner calls"}
 
     out_lines = []
     for line in latex.splitlines():
