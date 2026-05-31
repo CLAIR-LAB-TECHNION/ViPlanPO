@@ -179,7 +179,7 @@ def build_table(stats: pd.DataFrame, valid: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(data, index=col_index).T
 
 
-TASKS = {"sorting_books", "cleaning_out_drawers"}
+TASKS = {"sorting_books", "cleaning_out_drawers", "locking_every_door"}
 
 
 def _makecell(label: str) -> str:
