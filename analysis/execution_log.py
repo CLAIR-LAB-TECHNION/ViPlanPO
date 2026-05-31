@@ -53,6 +53,14 @@ def iter_log_records(path: Path) -> Iterator[Dict[str, Any]]:
                     continue
 
 
+def extract_difficulty(path: Path) -> str:
+    """Extract the difficulty level ('simple'/'medium'/'hard') from a path under PLANNING_DIR."""
+    try:
+        return path.relative_to(PLANNING_DIR).parts[1]
+    except (ValueError, IndexError):
+        return ""
+
+
 def is_success(entry: Dict[str, Any]) -> bool:
     """Return whether a ``Finished planning loop`` log entry represents a success."""
     return bool(entry.get("completed", False))

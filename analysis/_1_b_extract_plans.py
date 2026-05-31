@@ -6,6 +6,7 @@ from typing import Dict, List, Optional, Set, Tuple
 
 from analysis.execution_log import (
     PLANNING_DIR,
+    extract_difficulty,
     extract_timestamp,
     find_execution_files,
     iter_log_records,
@@ -71,6 +72,7 @@ def _load_initial_plans(path: Path) -> List[dict]:
     without either a plan message or a no-plan message.
     """
     run_id = extract_timestamp(path)
+    difficulty = extract_difficulty(path)
 
     plan_records: Dict[_InstanceKey, dict] = {}
     no_plan_keys: Set[_InstanceKey] = set()
@@ -98,6 +100,7 @@ def _load_initial_plans(path: Path) -> List[dict]:
                     "task": task,
                     "scene_id": scene_id,
                     "instance_id": instance_id,
+                    "difficulty": difficulty,
                     "problem_file": log.get("problem_file"),
                     "domain_file": DOMAIN_FILE,
                 }
@@ -136,6 +139,7 @@ def _load_initial_plans(path: Path) -> List[dict]:
             "task": task,
             "scene_id": scene_id,
             "instance_id": instance_id,
+            "difficulty": difficulty,
             "problem_file": src.get("problem_file"),
             "domain_file": DOMAIN_FILE,
             "plan": _normalize_plan(raw_plan),

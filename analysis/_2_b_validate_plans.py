@@ -27,8 +27,8 @@ PLANNING_DIR = Path("results/planning")
 # Suppress the UP PDDL-reader warning about :universal-preconditions.
 warnings.filterwarnings("ignore", category=UserWarning, module="unified_planning")
 
-# CSV columns — the first five form the unique key for a plan instance.
-COLUMNS = ["run_id", "policy_cls", "task", "scene_id", "instance_id", "valid"]
+# CSV columns — the first six form the unique key for a plan instance.
+COLUMNS = ["run_id", "policy_cls", "task", "scene_id", "instance_id", "difficulty", "valid"]
 
 _ProblemCache = Dict[Tuple[str, str], object]  # (domain_file, problem_file) -> UP Problem
 
@@ -157,12 +157,20 @@ def main() -> None:
                 if args.verbose:
                     _print_verbose(record, valid)
 
+                difficulty = record.get("difficulty")
+                if not difficulty:
+                    print(
+                        f"Missing 'difficulty' in {plan_file}. Re-run _1_b_extract_plans.",
+                        file=sys.stderr,
+                    )
+                    sys.exit(1)
                 writer.writerow({
                     "run_id": record.get("run_id", ""),
                     "policy_cls": record.get("policy_cls", ""),
                     "task": record.get("task", ""),
                     "scene_id": record.get("scene_id", ""),
                     "instance_id": record.get("instance_id", ""),
+                    "difficulty": difficulty,
                     "valid": valid,
                 })
 

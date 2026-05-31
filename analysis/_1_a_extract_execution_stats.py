@@ -7,14 +7,15 @@ from typing import Dict, List, Tuple
 
 from analysis.execution_log import (
     PLANNING_DIR,
+    extract_difficulty,
     extract_timestamp,
     find_execution_files,
     is_success,
     iter_log_records,
 )
 
-# CSV columns — the first five form the unique key matching validate_plans output.
-COLUMNS = ["run_id", "policy_cls", "task", "scene_id", "instance_id", "success", "action_count", "planning_time", "planner_calls"]
+# CSV columns — the first six form the unique key matching validate_plans output.
+COLUMNS = ["run_id", "policy_cls", "task", "scene_id", "instance_id", "difficulty", "success", "action_count", "planning_time", "planner_calls"]
 
 # Per-instance key: (run_id, policy_cls, task, scene_id, instance_id)
 _InstanceKey = Tuple[str, str, str, str, int]
@@ -26,6 +27,7 @@ _PLANNING_TIME_MSGS = frozenset({"New conformant plan", "Replanning executed."})
 def _extract_instance_stats(path: Path) -> List[dict]:
     """Parse one execution log and return per-instance stats records."""
     run_id = extract_timestamp(path)
+    difficulty = extract_difficulty(path)
 
     action_counts: Dict[_InstanceKey, int] = {}
     # Prefer planning_time_seconds (explicit planner events) over compute_time (VLM calls).
@@ -89,6 +91,7 @@ def _extract_instance_stats(path: Path) -> List[dict]:
             "task": task_k,
             "scene_id": scene_id_k,
             "instance_id": instance_id_k,
+            "difficulty": difficulty,
             "success": is_success(finish_entry),
             "action_count": action_counts.get(key, 0),
             "planning_time": planning_time,
