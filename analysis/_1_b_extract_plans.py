@@ -11,7 +11,7 @@ from analysis.execution_log import (
     iter_log_records,
 )
 
-DOMAIN_FILE = "data/planning/igibson/domain.pddl"
+DOMAIN_FILE = "data/planning/igibson/domain-cond.pddl"
 
 # Maps policy_cls → log message that carries the initial plan.
 _PLAN_MSG = {
@@ -35,6 +35,7 @@ def _parse_action_string(s: str) -> Dict:
     s = s.strip()
     paren = s.index("(")
     action = s[:paren].lower().strip()
+    action = action.replace("_0", "")
     params_str = s[paren + 1 : s.rindex(")")].strip()
     parameters = [p.lower().strip() for p in params_str.split(",")] if params_str else []
     return {"action": action, "parameters": parameters}
