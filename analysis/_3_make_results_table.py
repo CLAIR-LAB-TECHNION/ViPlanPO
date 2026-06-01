@@ -196,8 +196,11 @@ def _makecell(label: str) -> str:
 
 def _postprocess_latex(latex: str) -> str:
     """Replace column headers with \\makecell line-breaks and bold the max per row."""
-    for label in POLICY_LABEL.values():
-        latex = latex.replace(label, _makecell(label))
+    pattern = '|'.join(
+        re.escape(label)
+        for label in sorted(POLICY_LABEL.values(), key=len, reverse=True)
+    )
+    latex = re.sub(pattern, lambda m: _makecell(m.group()), latex)
 
     _BOLD_MIN = {"\\# Actions", "\\# Planner calls"}
 
