@@ -20,16 +20,16 @@ from analysis._2_b_validate_plans import _find_plan_files, _validate_record
 DIFFICULTY_ORDER = ["simple", "medium", "hard"]
 POLICY_ORDER     = ["vila", "plan", "cpp"]
 POLICY_LABEL: Dict[str, str] = {
-    "vila": "VLM-P (vila)",
-    "plan": "VLM-G (policy-plan)",
+    "vila": "VLM-P",
+    "plan": "VLM-G",
     "cpp":  "VLM-PG (ours)",
 }
 
 METRICS = [
-    "Execution success rate",
-    "First-plan satisficing",
-    "Num actions taken",
-    "Planner calls",
+    "Success (\%)",
+    "Satisficing (\%)",
+    "\\# Actions",
+    "\\# Planner calls",
 ]
 
 OUTPUT_PATH = Path(__file__).parent.parent / "../RoVLaP-NeuS-2026-/content/results_table.tex"
@@ -161,18 +161,18 @@ def build_table(stats: pd.DataFrame, valid: pd.DataFrame) -> pd.DataFrame:
         for pol in policies:
             grp = df[(df["difficulty"] == diff) & (df["policy_dir"] == pol)]
             n = len(grp)
-            data["Execution success rate"].append(
+            data["Success (\%)"].append(
                 grp["success"].mean() * 100 if n else float("nan")
             )
             # NaN in initial_plan_valid (instances absent from validation) are
             # excluded from mean() automatically — distinct from 0.0 (no plan).
-            data["First-plan satisficing"].append(
+            data["Satisficing (\%)"].append(
                 grp["initial_plan_valid"].mean() * 100 if n else float("nan")
             )
-            data["Num actions taken"].append(
+            data["\\# Actions"].append(
                 _iqm(grp["action_count"]) if n else float("nan")
             )
-            data["Planner calls"].append(
+            data["\\# Planner calls"].append(
                 _iqm(grp["planner_calls"]) if n else float("nan")
             )
 
@@ -187,11 +187,11 @@ TASKS: Dict[str, set] = {
 
 
 def _makecell(label: str) -> str:
-    """Wrap a column label in LaTeX \\makecell with a line break at the first space."""
+    """Rotate a column label 90 degrees, with a line break at the first space if present."""
     idx = label.find(' ')
     if idx == -1:
-        return label
-    return f'\\shortstack{{{label[:idx]}\\\\{label[idx + 1:]}}}'
+        return f'\\rotatebox{{90}}{{{label}}}'
+    return f'\\rotatebox{{90}}{{\\shortstack{{{label[:idx]}\\\\{label[idx + 1:]}}}}}'
 
 
 def _postprocess_latex(latex: str) -> str:
@@ -199,7 +199,7 @@ def _postprocess_latex(latex: str) -> str:
     for label in POLICY_LABEL.values():
         latex = latex.replace(label, _makecell(label))
 
-    _BOLD_MIN = {"Num actions taken", "Planner calls"}
+    _BOLD_MIN = {"\\# Actions", "\\# Planner calls"}
 
     out_lines = []
     for line in latex.splitlines():
@@ -221,7 +221,14 @@ def _postprocess_latex(latex: str) -> str:
                         new_cells.append(cell)
                 line = parts[0] + '&' + '&'.join(new_cells)
         out_lines.append(line)
-    return '\n'.join(out_lines)
+    result = '\n'.join(out_lines)
+    result = result.replace(
+        r'\end{tabular}',
+        '\\end{tabular}\n\\vspace{4pt}\n\n'
+        '{\\small VLM-PG (ours) is our method (\\acl{rvp});'
+        ' \\texttt{--} indicates the metric does not apply to that baseline.}',
+    )
+    return result
 
 
 def _allowed_mask(df: pd.DataFrame) -> pd.Series:
