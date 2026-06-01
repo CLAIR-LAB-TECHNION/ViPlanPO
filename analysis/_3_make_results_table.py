@@ -182,7 +182,7 @@ def build_table(stats: pd.DataFrame, valid: pd.DataFrame) -> pd.DataFrame:
 TASKS: Dict[str, set] = {
     "simple": {"sorting_books", "cleaning_out_drawers", "locking_every_door"},
     "medium": {"packing_food_for_work", "putting_away_toys", "sorting_groceries"},
-    "hard":   {"organizing_boxes_in_garage", "putting_away_toys", "organizing_file_cabinet"},
+    "hard":   {"organizing_boxes_in_garage", "putting_away_toys"},
 }
 
 
@@ -211,7 +211,7 @@ def _postprocess_latex(latex: str) -> str:
                 m = re.search(r'-?\d+(?:\.\d+)?', cell.rstrip('\\').strip())
                 nums.append(float(m.group()) if m else float('nan'))
             valid = [v for v in nums if not math.isnan(v)]
-            if valid:
+            if valid and row_label in METRICS:
                 best = min(valid) if row_label in _BOLD_MIN else max(valid)
                 new_cells = []
                 for cell, num in zip(parts[1:], nums):
