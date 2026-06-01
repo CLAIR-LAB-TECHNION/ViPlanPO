@@ -84,7 +84,7 @@ def _validate_record(record: dict, cache: _ProblemCache) -> Optional[bool]:
         with PlanValidator(name="sequential_plan_validator") as validator:
             result = validator.validate(problem, plan)
         return result.status == ValidationResultStatus.VALID
-    except Exception:
+    except Exception as e:
         return False
 
 
