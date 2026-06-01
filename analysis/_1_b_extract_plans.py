@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 from typing import Dict, List, Optional, Set, Tuple
 
@@ -36,7 +37,7 @@ def _parse_action_string(s: str) -> Dict:
     s = s.strip()
     paren = s.index("(")
     action = s[:paren].lower().strip()
-    action = action.replace("_0", "")
+    action = re.sub(r"_[0-9]", "", action)
     params_str = s[paren + 1 : s.rindex(")")].strip()
     parameters = [p.lower().strip() for p in params_str.split(",")] if params_str else []
     return {"action": action, "parameters": parameters}
