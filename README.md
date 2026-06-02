@@ -130,24 +130,10 @@ As some of the assets are encrypted, you will need to download the key provided 
 
 After this, the iGibson environment is ready to be used. For the benchmark, we use a client-server architecture, where the server runs inside the container and the client runs in the main execution environment. Scripts are provided in the `sh_scripts` folder to run the server and the client.
 
-## Benchmark
+## Running Experiments
 
-To run the benchmark, we provide bash scripts to run locally as well as SLURM scripts that can be used to run the experiments on a cluster. The scripts are located in the `sh_scripts` folder. If you are using a different cluster manager, you may need to modify the scripts at `sh_scripts/slurm_cluster` accordingly. You could also directly run the Python scripts in the `viplan/experiments` directory.
-
-In order to run some open-source models, you might need to accept their conditions on the huggingface hub. Then, you can include your token in the bash environment by running the following command:
-
-```bash
-export HF_TOKEN=<your_token>
-```
-
-Similarly, in order to run closed-source models, include your API key in the bash environment by running the following command:
-
-```bash
-export OPENAI_API_KEY=<your_key>
-export GEMINI_API_KEY=<your_key>
-export ANTHROPIC_API_KEY=<your_key>
-```
+See [running experiments](./viplan/experiments/README.md) for examples of how we ran the experiments.
 
 ## Results
 
-We include all the results from the experiments reported in the paper in the `results` folder. To process and visualize them, we provide Jupyter notebooks in the `notebooks` folder. This reproduces exactly all the Figures and Tables reported in the paper.
+We include all the results from the experiments reported in the paper in the `results` folder. To process the results into a table, use the scripts in `analyze` folder. This reproduces the table reported in the paper.
