@@ -8,8 +8,6 @@ This codebase contains the implementation of the RoVLaP benchmark. It is based o
 The project is divided into the following main sections:
 
 - Source code: [viplan](viplan/README.md)
-- Notebooks: [notebooks](notebooks/README.md) (mostly to visualize results)
-- Scripts to run the benchmark: [sh_scripts](sh_scripts/README.md)
 - Data: [data](data/README.md)
 
 ## Installation
