@@ -59,6 +59,10 @@ pip install "git+https://github.com/guyazran/up-cpor@neusCR"
 
 ### Environments
 
+#### Blocksworld
+
+> **Note:** In RoVLaP we did not use Blocksworld. Skip to iGibson below.
+
 The Blocksworld environment is based on the [Photorealistic Blocksworld](https://github.com/IBM/photorealistic-blocksworld) renderer, which is based on Blender. To install the Blender-based renderer, from the root directory of the repository, run the following commands:
 
 ```bash
