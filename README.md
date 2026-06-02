@@ -139,4 +139,6 @@ See [running experiments](./viplan/experiments/README.md) for examples of how we
 
 ## Results
 
-We include all the results from the experiments reported in the paper in the `results` folder. To process the results into a table, use the scripts in `analyze` folder. This reproduces the table reported in the paper.
+* We include all the results from the experiments reported in the paper in the `results` folder.
+* Here's an [example log file](./results/planning/igibson/simple/cpp/gpt-4.1/2026-05-18_13-40-43/execution.jsonl).
+* To process the results into a table, use the scripts in `analyze` folder. This reproduces the table reported in the paper.
