@@ -22,7 +22,7 @@ POLICY_ORDER     = ["vila", "plan", "cpp"]
 POLICY_LABEL: Dict[str, str] = {
     "vila": "VLM-P",
     "plan": "VLM-G",
-    "cpp":  "VLM-PG (ours)",
+    "cpp":  "RoVLaP (ours)",
 }
 
 METRICS = [
@@ -219,7 +219,7 @@ def _postprocess_latex(latex: str) -> str:
     result = result.replace(
         r'\end{tabular}',
         '\\end{tabular}\n\\vspace{4pt}\n\n'
-        '{\\small VLM-PG (ours) is our method (\\acl{rvp});'
+        '{\\small RoVLaP (ours) is our method (\\acl{rvp});'
         ' \\texttt{--} indicates the metric does not apply to that baseline.}',
     )
     return result
