@@ -1,8 +1,7 @@
-# ViPlan: A Benchmark for Visual Planning with Symbolic Predicates and Vision-Language Models
+# RoVLaP: Bridging Learned Visual Perception and Symbolic Belief-Space Planning
 
-This codebase contains the implementation of the ViPlan benchmark.
+This codebase contains the implementation of the RoVLaP benchmark. It is based on the ViPlan benchmark. [ViPlan](https://github.com/merlerm/ViPlan) is a benchmark for planning in Blocksworld and iGibson.
 
-![ViPlan](img/overview.png)
 
 ## Project structure
 
