@@ -125,7 +125,8 @@ def _warn_instance_mismatches(stats: pd.DataFrame) -> None:
                 ref_pol = policies[0]
                 print(
                     f"{_WARN} [{diff}]: instance set mismatch between '{ref_pol}' and '{pol}'. "
-                    f"Only in '{ref_pol}': {len(only_in_ref)}, only in '{pol}': {len(only_in_other)}.{_RST}",
+                    f"Only in '{ref_pol}' ({len(only_in_ref)}): {sorted(only_in_ref)}, "
+                    f"only in '{pol}' ({len(only_in_other)}): {sorted(only_in_other)}.{_RST}",
                     file=sys.stderr,
                 )
 
@@ -172,7 +173,7 @@ def build_table(stats: pd.DataFrame, valid: pd.DataFrame) -> pd.DataFrame:
 
 TASKS: Dict[str, set] = {
     "simple": {"sorting_books", "cleaning_out_drawers", "locking_every_door"},
-    "medium": {"packing_food_for_work", "putting_away_toys", "sorting_groceries"},
+    "medium": {"packing_food_for_work", "sorting_books", "sorting_groceries"},
     "hard":   {"organizing_boxes_in_garage", "putting_away_toys"},
 }
 
