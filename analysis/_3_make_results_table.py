@@ -91,15 +91,6 @@ def load_validation() -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
-def _iqm(series: pd.Series) -> float:
-    """Compute the interquartile mean of a pandas Series, ignoring NaNs."""
-    from scipy import stats
-    s = series.dropna()
-    if s.empty:
-        return float("nan")
-    return float(stats.trim_mean(s, 0.25))
-
-
 def _warn_instance_mismatches(stats: pd.DataFrame) -> None:
     """Warn about duplicate or mismatched instance sets across policies.
 
@@ -170,10 +161,10 @@ def build_table(stats: pd.DataFrame, valid: pd.DataFrame) -> pd.DataFrame:
                 grp["initial_plan_valid"].mean() * 100 if n else float("nan")
             )
             data["\\# Actions"].append(
-                _iqm(grp["action_count"]) if n else float("nan")
+                grp["action_count"].mean() if n else float("nan")
             )
             data["\\# Planner calls"].append(
-                _iqm(grp["planner_calls"]) if n else float("nan")
+                grp["planner_calls"].mean() if n else float("nan")
             )
 
     return pd.DataFrame(data, index=col_index).T
